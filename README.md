@@ -1,5 +1,7 @@
 # Flux Torrent Client
 
+![License](https://img.shields.io/badge/license-MIT-green) ![Platform](https://img.shields.io/badge/platform-PowerShell-lightgrey)
+
 A clean, fast, privacy-focused BitTorrent client built with Python, PyQt6, and libtorrent.
 
 ## Features
