@@ -25,6 +25,7 @@ from PyQt6.QtCore import QObject, QTimer, pyqtSignal, pyqtSlot, QThread, QMetaOb
 from flux.core.torrent import Torrent, TorrentSnapshot
 from flux.core.settings import Settings
 from flux.core.peer_filter import PeerFilter
+from flux.core.script_hooks import ScriptHookRunner
 
 logger = logging.getLogger(__name__)
 
@@ -87,6 +88,8 @@ class SessionWorker(QObject):
         self._session: Optional[lt.session] = None
         self._torrents: Dict[str, Torrent] = {}
         self._peer_filter = PeerFilter()
+        self._hook_runner = ScriptHookRunner()
+        self._hook_runner.configure(self._cfg.get("script_hooks", []))
         self._resume_db: Optional[sqlite3.Connection] = None
         self._ip_filter: Optional[lt.ip_filter] = None
 
@@ -216,6 +219,7 @@ class SessionWorker(QObject):
             self._resume_db = None
 
         self._torrents.clear()
+        self._hook_runner.shutdown()
         self.stopped.emit()
         logger.info("SessionWorker stopped.")
 
@@ -250,6 +254,7 @@ class SessionWorker(QObject):
                 torrent = Torrent(handle, category=category, tags=tags)
                 self._torrents[info_hash] = torrent
                 self.torrent_added.emit(info_hash)
+                self._fire_hook("on_add", torrent)
                 logger.info(f"Added torrent: {torrent.name}")
             else:
                 logger.warning(f"Torrent already exists: {info_hash}")
@@ -290,6 +295,7 @@ class SessionWorker(QObject):
                 torrent = Torrent(handle, category=category, tags=tags)
                 self._torrents[info_hash] = torrent
                 self.torrent_added.emit(info_hash)
+                self._fire_hook("on_add", torrent)
                 logger.info(f"Added magnet: {info_hash}")
 
         except Exception as e:
@@ -302,6 +308,7 @@ class SessionWorker(QObject):
             return
 
         name = torrent.name
+        self._fire_hook("on_delete", torrent)
         if delete_files:
             try:
                 self._session.remove_torrent(torrent.handle, lt.session.delete_files)
@@ -448,7 +455,29 @@ class SessionWorker(QObject):
         settings['active_limit'] = self._cfg.get("max_active_torrents", 10)
         self._session.apply_settings(settings)
         self._peer_filter.configure(self._cfg)
+        self._hook_runner.configure(self._cfg.get("script_hooks", []))
         self._load_ip_blocklist()
+
+    # --- Internal: Script hooks ---
+
+    def _fire_hook(self, event: str, torrent: Torrent, error: str = ""):
+        """Build torrent info dict and fire script hooks."""
+        snap = torrent.snapshot()
+        info = {
+            "name": snap.name,
+            "info_hash": snap.info_hash,
+            "save_path": snap.save_path,
+            "category": snap.category,
+            "tags": snap.tags,
+            "total_size": snap.total_size,
+            "progress": snap.progress,
+            "ratio": snap.ratio,
+            "total_downloaded": snap.total_downloaded,
+            "total_uploaded": snap.total_uploaded,
+        }
+        if error:
+            info["error"] = error
+        self._hook_runner.fire(event, info)
 
     # --- Internal: Resume DB ---
 
@@ -640,6 +669,9 @@ class SessionWorker(QObject):
                     ih = str(alert.handle.info_hash())
                     msg = str(alert.error.message()) if alert.error.value() != 0 else "Unknown"
                     self.torrent_error.emit(ih, msg)
+                    t_err = self._torrents.get(ih)
+                    if t_err:
+                        self._fire_hook("on_error", t_err, error=msg)
                 elif atype == lt.metadata_received_alert:
                     self.torrent_metadata.emit(str(alert.handle.info_hash()))
                 elif atype == lt.save_resume_data_alert:
@@ -661,6 +693,7 @@ class SessionWorker(QObject):
         torrent = self._torrents.get(info_hash)
         if not torrent:
             return
+        self._fire_hook("on_finish", torrent)
         on_complete = self._cfg.get("on_complete_action", 1)
         if on_complete == 1:
             torrent.pause()

@@ -74,6 +74,12 @@ class Settings:
         "sort_column": "added",
         "sort_order": "desc",
         "show_speed_in_title": True,
+        # Script hooks
+        "script_hooks": [],
+        # Webhook notifications
+        "webhook_enabled": False,
+        "webhook_url": "",
+        "webhook_events": ["on_finish"],
     }
 
     def __init__(self, db_path: Optional[str] = None):
