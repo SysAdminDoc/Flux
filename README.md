@@ -53,6 +53,8 @@ A clean, fast, privacy-focused BitTorrent client built with Python, PyQt6, and l
   HTTP(S) proxies while keeping unrelated trackers direct
 - **Label automation** - apply category/tag-scoped completion paths, tracker lists, ratio limits,
   and upload limits
+- **Script hooks** - run configured shell commands on add, finish, delete, and error events with
+  JSON payloads
 
 ## Requirements
 
@@ -88,6 +90,10 @@ and can remove the downloaded files with the torrent.
 Per-torrent start/stop schedules are also available as an info-hash keyed JSON object in the
 Behavior tab. Schedules use local time, Monday=0 through Sunday=6, and support windows that cross
 midnight.
+Lifecycle script hooks are configured in Settings > Behavior as a JSON array. Each hook selects
+an event (`on_add`, `on_finish`, `on_delete`, or `on_error`), a shell command, and optional timeout
+and JSON stdin/argument delivery settings. Hooks run asynchronously so they do not block torrent
+transfers or the UI.
 
 ## Usage
 

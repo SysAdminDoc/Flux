@@ -17,6 +17,7 @@ All notable changes to Flux will be documented in this file.
 - Added conditional auto-delete with ratio/seed-age OR thresholds, label exclusion, and optional
   file deletion.
 - Added persistent per-torrent weekday start/stop schedules with overnight-window support.
+- Added Behavior settings for asynchronous lifecycle script hooks with JSON payload delivery.
 
 ## [v0.1.0] - %Y->- (HEAD -> main, origin/main, origin/HEAD)
 

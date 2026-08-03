@@ -7,7 +7,7 @@ from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QTabWidget, QWidget,
     QLabel, QLineEdit, QSpinBox, QDoubleSpinBox, QCheckBox,
     QComboBox, QPushButton, QGroupBox, QGridLayout, QFileDialog,
-    QRadioButton, QButtonGroup, QFrame, QPlainTextEdit
+    QRadioButton, QButtonGroup, QFrame, QPlainTextEdit, QScrollArea
 )
 
 from flux.core.settings import (
@@ -513,8 +513,27 @@ class SettingsDialog(QDialog):
         schedule_layout.addWidget(schedules)
         layout.addWidget(schedule_group)
 
+        hooks_group = QGroupBox("Script hooks")
+        hooks_layout = QVBoxLayout(hooks_group)
+        hooks_layout.addWidget(QLabel(
+            "JSON array of lifecycle commands. Events: on_add, on_finish, on_delete, on_error."
+        ))
+        hooks = QPlainTextEdit()
+        hooks.setPlaceholderText(
+            '[{"event":"on_finish","command":"powershell -File C:/Scripts/done.ps1",'
+            '"enabled":true,"timeout_seconds":60}]'
+        )
+        hooks.setMaximumHeight(135)
+        self._widgets["script_hooks"] = hooks
+        hooks_layout.addWidget(hooks)
+        layout.addWidget(hooks_group)
+
         layout.addStretch()
-        return page
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setWidget(page)
+        return scroll
 
     # --- Remote Tab ---
 
@@ -757,6 +776,9 @@ class SettingsDialog(QDialog):
         self._widgets["torrent_schedules"].setPlainText(json.dumps(
             s.get("torrent_schedules", {}) or {}, indent=2
         ))
+        self._widgets["script_hooks"].setPlainText(json.dumps(
+            s.get("script_hooks", []) or [], indent=2
+        ))
 
         # Remote
         self._widgets["remote_enabled"].setChecked(s.get("remote_enabled", False))
@@ -867,6 +889,11 @@ class SettingsDialog(QDialog):
         s.set("torrent_schedules", build_torrent_schedule_settings({
             "torrent_schedules": schedules
         }))
+        try:
+            script_hooks = json.loads(self._widgets["script_hooks"].toPlainText() or "[]")
+        except json.JSONDecodeError:
+            script_hooks = s.get("script_hooks", []) or []
+        s.set("script_hooks", script_hooks if isinstance(script_hooks, list) else [])
 
         # Remote
         s.set("remote_enabled", self._widgets["remote_enabled"].isChecked())
