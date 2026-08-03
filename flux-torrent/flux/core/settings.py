@@ -24,6 +24,11 @@ class Settings:
         "proxy_auth": False,
         "proxy_user": "",
         "proxy_pass": "",
+        # I2P SAM bridge
+        "i2p_enabled": False,
+        "i2p_hostname": "127.0.0.1",
+        "i2p_port": 7656,
+        "i2p_allow_mixed": False,
         # Bandwidth
         "max_download_speed": 0,  # 0 = unlimited (bytes/s)
         "max_upload_speed": 13312,  # 13 KiB/s = 13312 bytes/s
@@ -192,3 +197,21 @@ class Settings:
 
     def close(self):
         self._conn.close()
+
+
+def build_i2p_settings(values: dict[str, Any]) -> dict[str, Any]:
+    """Build safe libtorrent I2P settings from user configuration."""
+    if not bool(values.get("i2p_enabled", False)):
+        return {}
+    host = str(values.get("i2p_hostname", "127.0.0.1") or "").strip()
+    try:
+        port = int(values.get("i2p_port", 7656))
+    except (TypeError, ValueError):
+        return {}
+    if not host or not 1 <= port <= 65535:
+        return {}
+    return {
+        "i2p_hostname": host,
+        "i2p_port": port,
+        "allow_i2p_mixed": bool(values.get("i2p_allow_mixed", False)),
+    }

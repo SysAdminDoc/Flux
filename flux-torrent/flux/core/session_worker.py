@@ -23,7 +23,7 @@ import libtorrent as lt
 from PyQt6.QtCore import QObject, QTimer, pyqtSignal, pyqtSlot, QThread, QMetaObject, Qt
 
 from flux.core.torrent import Torrent, get_info_hashes
-from flux.core.settings import Settings
+from flux.core.settings import Settings, build_i2p_settings
 from flux.core.peer_filter import PeerFilter
 from flux.core.script_hooks import ScriptHookRunner
 
@@ -146,6 +146,7 @@ class SessionWorker(QObject):
             settings['download_rate_limit'] = dl_limit
         if ul_limit > 0:
             settings['upload_rate_limit'] = ul_limit
+        settings.update(build_i2p_settings(self._cfg))
 
         enc = self._cfg.get("encryption_mode", 1)
         try:
@@ -490,6 +491,7 @@ class SessionWorker(QObject):
         settings['active_downloads'] = self._cfg.get("max_active_downloads", 5)
         settings['active_seeds'] = self._cfg.get("max_active_uploads", 5)
         settings['active_limit'] = self._cfg.get("max_active_torrents", 10)
+        settings.update(build_i2p_settings(self._cfg))
         self._session.apply_settings(settings)
         self._peer_filter.configure(self._cfg)
         self._hook_runner.configure(self._cfg.get("script_hooks", []))

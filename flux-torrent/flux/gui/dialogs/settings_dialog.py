@@ -1,11 +1,11 @@
 """Settings dialog for Flux Torrent Client."""
 
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QTabWidget, QWidget,
     QLabel, QLineEdit, QSpinBox, QDoubleSpinBox, QCheckBox,
     QComboBox, QPushButton, QGroupBox, QGridLayout, QFileDialog,
-    QRadioButton, QButtonGroup, QFrame, QSizePolicy
+    QRadioButton, QButtonGroup, QFrame
 )
 
 
@@ -291,6 +291,31 @@ class SettingsDialog(QDialog):
         pg.addWidget(natpmp, 2, 0, 1, 2)
 
         layout.addWidget(port_group)
+
+        i2p_group = QGroupBox("I2P / SAM Bridge")
+        i2p_layout = QGridLayout(i2p_group)
+        i2p_layout.setSpacing(8)
+
+        i2p_enabled = QCheckBox("Enable I2P outbound transport")
+        self._widgets["i2p_enabled"] = i2p_enabled
+        i2p_layout.addWidget(i2p_enabled, 0, 0, 1, 3)
+
+        i2p_layout.addWidget(QLabel("SAM host:"), 1, 0)
+        i2p_host = QLineEdit()
+        self._widgets["i2p_hostname"] = i2p_host
+        i2p_layout.addWidget(i2p_host, 1, 1, 1, 2)
+
+        i2p_layout.addWidget(QLabel("SAM port:"), 2, 0)
+        i2p_port = QSpinBox()
+        i2p_port.setRange(1, 65535)
+        self._widgets["i2p_port"] = i2p_port
+        i2p_layout.addWidget(i2p_port, 2, 1)
+
+        i2p_mixed = QCheckBox("Allow mixed I2P/non-I2P torrents")
+        self._widgets["i2p_allow_mixed"] = i2p_mixed
+        i2p_layout.addWidget(i2p_mixed, 3, 0, 1, 3)
+
+        layout.addWidget(i2p_group)
 
         # Protocol
         proto_group = QGroupBox("Protocol")
@@ -603,6 +628,10 @@ class SettingsDialog(QDialog):
         self._widgets["listen_port"].setValue(s.get("listen_port", 6881))
         self._widgets["upnp_enabled"].setChecked(s.get("upnp_enabled", True))
         self._widgets["natpmp_enabled"].setChecked(s.get("natpmp_enabled", True))
+        self._widgets["i2p_enabled"].setChecked(s.get("i2p_enabled", False))
+        self._widgets["i2p_hostname"].setText(s.get("i2p_hostname", "127.0.0.1"))
+        self._widgets["i2p_port"].setValue(s.get("i2p_port", 7656))
+        self._widgets["i2p_allow_mixed"].setChecked(s.get("i2p_allow_mixed", False))
         self._widgets["dht_enabled"].setChecked(s.get("dht_enabled", True))
         self._widgets["pex_enabled"].setChecked(s.get("pex_enabled", True))
         self._widgets["lsd_enabled"].setChecked(s.get("lsd_enabled", True))
@@ -689,6 +718,10 @@ class SettingsDialog(QDialog):
         s.set("listen_port", self._widgets["listen_port"].value())
         s.set("upnp_enabled", self._widgets["upnp_enabled"].isChecked())
         s.set("natpmp_enabled", self._widgets["natpmp_enabled"].isChecked())
+        s.set("i2p_enabled", self._widgets["i2p_enabled"].isChecked())
+        s.set("i2p_hostname", self._widgets["i2p_hostname"].text().strip() or "127.0.0.1")
+        s.set("i2p_port", self._widgets["i2p_port"].value())
+        s.set("i2p_allow_mixed", self._widgets["i2p_allow_mixed"].isChecked())
         s.set("dht_enabled", self._widgets["dht_enabled"].isChecked())
         s.set("pex_enabled", self._widgets["pex_enabled"].isChecked())
         s.set("lsd_enabled", self._widgets["lsd_enabled"].isChecked())

@@ -1,10 +1,11 @@
 """Unit tests for flux.core.settings."""
-import sys, os
+import os
+import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 import unittest
 import tempfile
-from flux.core.settings import Settings
+from flux.core.settings import Settings, build_i2p_settings
 
 
 class TestSettings(unittest.TestCase):
@@ -22,6 +23,24 @@ class TestSettings(unittest.TestCase):
         self.assertEqual(self.settings.get("listen_port"), 6881)
         self.assertTrue(self.settings.get("dht_enabled"))
         self.assertEqual(self.settings.get("max_connections"), 500)
+
+    def test_i2p_settings_are_validated(self):
+        self.assertEqual(build_i2p_settings({}), {})
+        self.assertEqual(
+            build_i2p_settings({
+                "i2p_enabled": True,
+                "i2p_hostname": "sam.local",
+                "i2p_port": 7656,
+                "i2p_allow_mixed": True,
+            }),
+            {
+                "i2p_hostname": "sam.local",
+                "i2p_port": 7656,
+                "allow_i2p_mixed": True,
+            },
+        )
+        self.assertEqual(build_i2p_settings({"i2p_enabled": True, "i2p_port": 0}), {})
+        self.assertEqual(build_i2p_settings({"i2p_enabled": True, "i2p_port": "bad"}), {})
 
     def test_set_get(self):
         self.settings.set("listen_port", 12345)

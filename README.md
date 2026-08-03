@@ -55,6 +55,7 @@ A clean, fast, privacy-focused BitTorrent client built with Python, PyQt6, and l
 - Python 3.10+
 - PyQt6
 - libtorrent (python bindings, 2.0+)
+- Optional I2P SAM bridge for I2P outbound transport (default `127.0.0.1:7656`)
 
 ## Installation
 
@@ -66,6 +67,8 @@ On Windows, if libtorrent fails to load DLLs:
 ```bash
 python fix_libtorrent.py
 ```
+
+I2P transport is configured in Settings > Connection and requires a running local SAM bridge.
 
 ## Usage
 
