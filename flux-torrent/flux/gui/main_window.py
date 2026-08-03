@@ -25,6 +25,7 @@ from flux.core.session_worker import ThreadedSession, SessionStats, DetailData
 from flux.core.remote_client import RemoteThreadedSession
 from flux.core.settings import Settings
 from flux.core.torrent import TorrentState
+from flux.core.column_profiles import normalize_column_profile, normalize_column_profiles
 from flux.core.remote import RemoteControlServer
 from flux.gui.torrent_model import TorrentListModel, TorrentSortFilterProxy
 from flux.gui.widgets.delegates import ProgressBarDelegate, StateIconDelegate
@@ -103,6 +104,10 @@ class MainWindow(QMainWindow):
         self._last_detail = DetailData()
         self._remote_server: RemoteControlServer | None = None
         self._rss_monitor = None
+        self._column_profile_key = "default"
+        self._column_profiles = normalize_column_profiles(
+            self._settings.get("column_profiles", {})
+        )
 
         self.setWindowTitle("Flux Torrent")
         self.setMinimumSize(1100, 700)
@@ -283,9 +288,12 @@ class MainWindow(QMainWindow):
 
         header.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         header.customContextMenuRequested.connect(self._show_column_menu)
+        header.sectionMoved.connect(lambda *_: self._capture_column_profile())
+        header.sectionResized.connect(lambda *_: self._capture_column_profile())
 
         self._table.setItemDelegateForColumn(0, StateIconDelegate(self._table))
         self._table.setItemDelegateForColumn(3, ProgressBarDelegate(self._table))
+        self._apply_column_profile("default")
 
         self._v_splitter.addWidget(self._table)
 
@@ -555,10 +563,79 @@ class MainWindow(QMainWindow):
             action.setData(i)
             action.triggered.connect(lambda checked, col=i: self._toggle_column(col, checked))
 
+        menu.addSeparator()
+        reset = menu.addAction(f"Reset {self._column_profile_key.title()} profile")
+        reset.triggered.connect(lambda: self._reset_column_profile(self._column_profile_key))
+
         menu.exec(header.mapToGlobal(pos))
 
     def _toggle_column(self, column: int, visible: bool):
         self._table.horizontalHeader().setSectionHidden(column, not visible)
+        self._capture_column_profile()
+
+    @staticmethod
+    def _column_profile_key_for_state(state) -> str:
+        if state == TorrentState.DOWNLOADING:
+            return "downloading"
+        if state == TorrentState.SEEDING:
+            return "seeding"
+        if state == TorrentState.COMPLETED:
+            return "completed"
+        return "default"
+
+    def _capture_column_profile(self):
+        """Persist the current header layout under the active filter profile."""
+        if not hasattr(self, "_table"):
+            return
+        header = self._table.horizontalHeader()
+        order = []
+        for visual_index in range(header.count()):
+            logical_index = header.logicalIndex(visual_index)
+            order.append(TorrentListModel.COLUMNS[logical_index][1])
+        widths = {
+            key: header.sectionSize(index)
+            for index, (_, key, _) in enumerate(TorrentListModel.COLUMNS)
+        }
+        visible = [
+            key for index, (_, key, _) in enumerate(TorrentListModel.COLUMNS)
+            if not header.isSectionHidden(index)
+        ]
+        self._column_profiles[self._column_profile_key] = normalize_column_profile({
+            "visible": visible,
+            "order": order,
+            "widths": widths,
+        }, self._column_profile_key)
+        self._settings.set("column_profiles", self._column_profiles)
+
+    def _apply_column_profile(self, profile_key: str):
+        profile = normalize_column_profile(
+            self._column_profiles.get(profile_key, {}), profile_key
+        )
+        self._column_profiles[profile_key] = profile
+        self._column_profile_key = profile_key
+        header = self._table.horizontalHeader()
+        header.blockSignals(True)
+        try:
+            key_to_index = {
+                key: index for index, (_, key, _) in enumerate(TorrentListModel.COLUMNS)
+            }
+            visible = set(profile["visible"])
+            for key, index in key_to_index.items():
+                header.setSectionHidden(index, key not in visible)
+                if key in profile["widths"]:
+                    header.resizeSection(index, profile["widths"][key])
+            for visual_index, key in enumerate(profile["order"]):
+                logical_index = key_to_index[key]
+                current_visual = header.visualIndex(logical_index)
+                if current_visual != visual_index:
+                    header.moveSection(current_visual, visual_index)
+        finally:
+            header.blockSignals(False)
+
+    def _reset_column_profile(self, profile_key: str):
+        self._column_profiles[profile_key] = normalize_column_profile({}, profile_key)
+        self._apply_column_profile(profile_key)
+        self._capture_column_profile()
 
     # ------------------------------------------------------------------ #
     #  Search
@@ -976,6 +1053,8 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------ #
 
     def _on_filter_state_changed(self, state):
+        self._capture_column_profile()
+        self._apply_column_profile(self._column_profile_key_for_state(state))
         self._proxy_model.set_state_filter(state)
 
     def _on_filter_category_changed(self, category):
@@ -1130,6 +1209,7 @@ class MainWindow(QMainWindow):
             event.ignore()
             return
 
+        self._capture_column_profile()
         self._settings.set("window_geometry", self.saveGeometry().toHex().data().decode())
 
         # Stop RSS monitor

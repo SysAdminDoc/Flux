@@ -91,6 +91,7 @@ class Settings:
         "window_state": "",
         "column_widths": "",
         "column_order": "",
+        "column_profiles": {},
         "sort_column": "added",
         "sort_order": "desc",
         "show_speed_in_title": True,

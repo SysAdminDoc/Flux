@@ -61,6 +61,7 @@ A clean, fast, privacy-focused BitTorrent client built with Python, PyQt6, and l
   candidates against a downloaded library before reusing content
 - **Private-tracker profile** - disable DHT/PEX/LSD and cap unchoke slots with one setting
 - **Creation presets** - save named piece-size, tracker, private, comment, and web-seed options
+- **Column profiles** - keep focused Downloading, Seeding, and Completed table layouts
 
 ## Requirements
 
@@ -111,6 +112,9 @@ The private-tracker profile is configured in Settings > Connection. Enabling it 
 and LSD for existing and newly added torrents and applies the selected session-wide unchoke cap.
 Create Torrent includes named presets with Load, Save As, and Delete controls; presets are stored in
 the application settings and can be reused for public or private release templates.
+The torrent table saves independent column visibility, order, and widths for the Downloading,
+Seeding, Completed, and default sidebar filters. Right-click the header to toggle a column or reset
+the active profile.
 
 ## Usage
 
