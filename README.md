@@ -55,6 +55,8 @@ A clean, fast, privacy-focused BitTorrent client built with Python, PyQt6, and l
   and upload limits
 - **Script hooks** - run configured shell commands on add, finish, delete, and error events with
   JSON payloads
+- **RSS episode automation** - match `S01E05`/`1x05` releases with per-show quality and group
+  rules, plus optional TMDB/TVDB title lookup
 
 ## Requirements
 
@@ -94,6 +96,10 @@ Lifecycle script hooks are configured in Settings > Behavior as a JSON array. Ea
 an event (`on_add`, `on_finish`, `on_delete`, or `on_error`), a shell command, and optional timeout
 and JSON stdin/argument delivery settings. Hooks run asynchronously so they do not block torrent
 transfers or the UI.
+RSS feeds are managed from Tools > RSS Feed Manager. A feed can use a JSON show-rule array with
+aliases, season/episode constraints, resolution and codec requirements, and a release-group
+allowlist. TMDB or TVDB credentials are optional; the Lookup button runs the selected provider in
+the RSS worker and stores the chosen show identity in the rule.
 
 ## Usage
 

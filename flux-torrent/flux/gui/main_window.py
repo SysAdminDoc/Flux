@@ -729,9 +729,15 @@ class MainWindow(QMainWindow):
         from flux.core.rss_monitor import RSSMonitor
         if not self._rss_monitor:
             self._rss_monitor = RSSMonitor()
+            self._rss_monitor.load_config(self._settings.get("rss_feeds", []) or [])
             self._rss_monitor.new_torrent.connect(self._on_rss_new_torrent)
         dlg = RSSManagerDialog(self._rss_monitor, self)
+        dlg.feeds_changed.connect(self._save_rss_config)
         dlg.exec()
+
+    def _save_rss_config(self):
+        if self._rss_monitor:
+            self._settings.set("rss_feeds", self._rss_monitor.save_config())
 
     def _on_rss_new_torrent(self, download_url: str, save_path: str, category: str):
         if download_url.startswith("magnet:"):
@@ -1119,6 +1125,7 @@ class MainWindow(QMainWindow):
 
         # Stop RSS monitor
         if self._rss_monitor:
+            self._save_rss_config()
             self._rss_monitor.stop_all()
 
         # Stop session (blocks until worker thread exits)

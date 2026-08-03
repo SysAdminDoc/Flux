@@ -92,6 +92,8 @@ class Settings:
         "show_speed_in_title": True,
         # Script hooks
         "script_hooks": [],
+        # RSS feeds
+        "rss_feeds": [],
         # Remote Web UI / API
         "remote_enabled": False,
         "remote_host": "127.0.0.1",

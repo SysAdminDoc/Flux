@@ -10,20 +10,378 @@ Supports:
 
 import re
 import time
+import json
 import logging
 import sqlite3
 import hashlib
 from pathlib import Path
 from typing import Optional, List, Dict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from urllib.request import urlopen, Request
-from urllib.error import URLError
+from urllib.parse import urlencode
 from xml.etree import ElementTree as ET
 from concurrent.futures import ThreadPoolExecutor
 
 from PyQt6.QtCore import QObject, QTimer, pyqtSignal
 
 logger = logging.getLogger(__name__)
+
+
+_SEASON_EPISODE_RE = re.compile(
+    r"(?<![A-Za-z0-9])S(?P<season>\d{1,2})[\s._-]*E(?P<episode>\d{1,3})"
+    r"(?:[\s._-]*(?:E|-)[\s._-]*(?P<episode_end>\d{1,3})(?![A-Za-z0-9]))?",
+    re.IGNORECASE,
+)
+_ALT_EPISODE_RE = re.compile(
+    r"(?<![A-Za-z0-9])(?P<season>\d{1,2})x(?P<episode>\d{1,3})"
+    r"(?:[\s._-]*(?:x|-)[\s._-]*(?P<episode_end>\d{1,3})(?![A-Za-z0-9]))?",
+    re.IGNORECASE,
+)
+_RESOLUTION_RE = re.compile(
+    r"(?<![A-Za-z0-9])(4320p|2160p|1440p|1080p|720p|576p|480p|360p|8k|4k)"
+    r"(?![A-Za-z0-9])",
+    re.IGNORECASE,
+)
+_CODEC_RE = re.compile(
+    r"(?<![A-Za-z0-9])(x\.?264|x\.?265|h[ ._-]?264|h[ ._-]?265|hevc|av1|vp9|xvid)"
+    r"(?![A-Za-z0-9])",
+    re.IGNORECASE,
+)
+
+
+def _as_text_list(value) -> List[str]:
+    """Normalize a string or JSON array into a trimmed text list."""
+    if value is None:
+        return []
+    if isinstance(value, str):
+        values = re.split(r"[,;\n]", value)
+    elif isinstance(value, (list, tuple, set)):
+        values = value
+    else:
+        values = [value]
+    return [str(item).strip() for item in values if str(item).strip()]
+
+
+def _normalize_show(value: str) -> str:
+    value = re.sub(r"[._]+", " ", str(value or ""))
+    value = re.sub(r"[\[\](){}]", " ", value)
+    return " ".join(value.split()).casefold()
+
+
+def _normalize_token(value: str) -> str:
+    return re.sub(r"[^\w]+", "", str(value or "").casefold(), flags=re.UNICODE)
+
+
+def _normalize_resolution(value: str) -> str:
+    value = str(value or "").strip().casefold().replace(" ", "")
+    if value == "4k":
+        return "2160p"
+    if value == "8k":
+        return "4320p"
+    if value.isdigit():
+        return f"{value}p"
+    return value
+
+
+def _normalize_codec(value: str) -> str:
+    value = re.sub(r"[ ._-]+", "", str(value or "").casefold())
+    if value in {"h264", "avc", "x264"}:
+        return "x264"
+    if value in {"h265", "hevc", "x265"}:
+        return "x265"
+    return value
+
+
+@dataclass(frozen=True)
+class EpisodeMatch:
+    """Episode and release metadata parsed from a torrent title."""
+
+    title: str
+    show: str
+    season: int
+    episodes: tuple[int, ...]
+    resolution: str = ""
+    codec: str = ""
+    group: str = ""
+
+    @property
+    def episode(self) -> int:
+        return self.episodes[0]
+
+
+def parse_episode_title(title: str) -> Optional[EpisodeMatch]:
+    """Parse common ``Show.Name.S01E05`` or ``Show Name 1x05`` releases.
+
+    The parser is deliberately conservative: an episode marker without a show
+    prefix is not considered a match, which prevents movie titles containing a
+    coincidental season marker from entering a show rule.
+    """
+    title = str(title or "").strip()
+    marker = _SEASON_EPISODE_RE.search(title) or _ALT_EPISODE_RE.search(title)
+    if marker is None:
+        return None
+
+    prefix = title[:marker.start()]
+    leading_group = re.match(r"^\s*[\[(]([^\])}]+)[\])]\s*", title)
+    group = leading_group.group(1).strip() if leading_group else ""
+    if leading_group:
+        show_text = prefix[leading_group.end():].strip(" ._-[]()")
+        show_text = re.sub(
+            r"^\s*[\[(][^\])}]+[\])]\s*", "", show_text
+        ).strip(" ._-[]()")
+    else:
+        show_text = prefix.strip(" ._-[]()")
+
+    show = re.sub(r"[._]+", " ", show_text)
+    show = " ".join(show.split()).strip()
+    if not show:
+        return None
+
+    if not group:
+        bracketed = re.findall(r"\[([^\]]+)\]", title)
+        if bracketed:
+            group = bracketed[-1].strip()
+    if not group:
+        hyphen_positions = [match.start() for match in re.finditer("-", title)]
+        for position in reversed(hyphen_positions):
+            if marker.start() <= position < marker.end():
+                continue
+            candidate = title[position + 1:].strip(" ._-")
+            if not 2 <= len(candidate) <= 40 or not re.fullmatch(
+                r"[A-Za-z0-9][A-Za-z0-9._-]*", candidate
+            ):
+                continue
+            if not re.fullmatch(r"(?:\d{3,4}p|[48]k)", candidate, re.IGNORECASE):
+                if not _CODEC_RE.fullmatch(candidate) and not re.fullmatch(
+                    r"(?:S?\d{1,2}E\d{1,3}|\d{1,2}x\d{1,3})", candidate, re.IGNORECASE
+                ):
+                    group = candidate
+                    break
+
+    episode_values = [int(marker.group("episode"))]
+    if marker.group("episode_end"):
+        episode_values.append(int(marker.group("episode_end")))
+    resolution_match = _RESOLUTION_RE.search(title)
+    codec_match = _CODEC_RE.search(title)
+
+    return EpisodeMatch(
+        title=title,
+        show=show,
+        season=int(marker.group("season")),
+        episodes=tuple(episode_values),
+        resolution=_normalize_resolution(
+            resolution_match.group(1) if resolution_match else ""
+        ),
+        codec=_normalize_codec(codec_match.group(1) if codec_match else ""),
+        group=group,
+    )
+
+
+@dataclass
+class ShowRule:
+    """Per-show release constraints used by an RSS feed."""
+
+    show: str = ""
+    aliases: List[str] = field(default_factory=list)
+    resolutions: List[str] = field(default_factory=list)
+    codecs: List[str] = field(default_factory=list)
+    groups: List[str] = field(default_factory=list)
+    seasons: List[int] = field(default_factory=list)
+    episodes: List[int] = field(default_factory=list)
+    lookup_provider: str = ""
+    lookup_id: str = ""
+
+    @classmethod
+    def from_dict(cls, value: dict) -> "ShowRule":
+        if not isinstance(value, dict):
+            return cls()
+        raw_seasons = value.get("seasons", value.get("season", []))
+        raw_episodes = value.get("episodes", value.get("episode", []))
+        seasons = []
+        for item in _as_text_list(raw_seasons):
+            try:
+                seasons.append(int(item))
+            except ValueError:
+                continue
+        episodes = []
+        for item in _as_text_list(raw_episodes):
+            try:
+                episodes.append(int(item))
+            except ValueError:
+                continue
+        return cls(
+            show=str(value.get("show", value.get("name", ""))).strip(),
+            aliases=_as_text_list(value.get("aliases", [])),
+            resolutions=_as_text_list(
+                value.get("resolutions", value.get("resolution", []))
+            ),
+            codecs=_as_text_list(value.get("codecs", value.get("codec", []))),
+            groups=_as_text_list(
+                value.get("groups", value.get("group_allowlist", value.get("group", [])))
+            ),
+            seasons=seasons,
+            episodes=episodes,
+            lookup_provider=str(value.get("lookup_provider", "")).strip().casefold(),
+            lookup_id=str(value.get("lookup_id", "")).strip(),
+        )
+
+    def to_dict(self) -> dict:
+        return {
+            "show": self.show,
+            "aliases": list(self.aliases),
+            "resolutions": list(self.resolutions),
+            "codecs": list(self.codecs),
+            "groups": list(self.groups),
+            "seasons": list(self.seasons),
+            "episodes": list(self.episodes),
+            "lookup_provider": self.lookup_provider,
+            "lookup_id": self.lookup_id,
+        }
+
+    def matches(self, episode: EpisodeMatch) -> bool:
+        names = {_normalize_show(self.show)}
+        names.update(_normalize_show(alias) for alias in self.aliases)
+        names.discard("")
+        if _normalize_show(episode.show) not in names:
+            return False
+        if self.seasons and episode.season not in self.seasons:
+            return False
+        if self.episodes and not any(number in self.episodes for number in episode.episodes):
+            return False
+        if self.resolutions:
+            allowed = {_normalize_resolution(item) for item in self.resolutions}
+            if _normalize_resolution(episode.resolution) not in allowed:
+                return False
+        if self.codecs:
+            allowed = {_normalize_codec(item) for item in self.codecs}
+            if _normalize_codec(episode.codec) not in allowed:
+                return False
+        if self.groups:
+            allowed = {_normalize_token(item) for item in self.groups}
+            if _normalize_token(episode.group) not in allowed:
+                return False
+        return True
+
+
+def parse_show_rules(values) -> List[ShowRule]:
+    """Parse and discard malformed/empty show-rule entries."""
+    if not isinstance(values, list):
+        return []
+    return [
+        rule for value in values
+        if isinstance(value, dict)
+        for rule in [ShowRule.from_dict(value)]
+        if rule.show
+    ]
+
+
+@dataclass(frozen=True)
+class ShowLookupResult:
+    """Normalized result returned by a TVDB or TMDB series search."""
+
+    provider: str
+    identifier: str
+    name: str
+    year: str = ""
+    overview: str = ""
+
+
+class ShowLookupClient:
+    """Small, optional TVDB v4/TMDB TV search client.
+
+    The RSS monitor never calls this client unless a caller explicitly creates
+    one and invokes ``search``. API credentials therefore remain opt-in and
+    feed polling stays local and non-blocking by default.
+    """
+
+    def __init__(self, provider: str, api_key: str, pin: str = "", timeout: float = 10.0,
+                 opener=None):
+        self.provider = str(provider or "").strip().casefold()
+        self.api_key = str(api_key or "").strip()
+        self.pin = str(pin or "").strip()
+        self.timeout = max(1.0, float(timeout))
+        self._opener = opener or urlopen
+        self._tvdb_token = ""
+        self._cache: Dict[str, List[ShowLookupResult]] = {}
+
+    def search(self, query: str) -> List[ShowLookupResult]:
+        query = str(query or "").strip()
+        if not query:
+            return []
+        cache_key = query.casefold()
+        if cache_key in self._cache:
+            return list(self._cache[cache_key])
+        if self.provider not in {"tmdb", "tvdb"}:
+            raise ValueError("lookup provider must be 'tmdb' or 'tvdb'")
+        if not self.api_key:
+            raise ValueError(f"{self.provider.upper()} API credentials are required")
+
+        if self.provider == "tmdb":
+            results = self._search_tmdb(query)
+        else:
+            results = self._search_tvdb(query)
+        self._cache[cache_key] = results
+        return list(results)
+
+    def _request_json(self, request: Request) -> dict:
+        response = self._opener(request, timeout=self.timeout)
+        try:
+            raw = response.read()
+        finally:
+            close = getattr(response, "close", None)
+            if close:
+                close()
+        if isinstance(raw, bytes):
+            raw = raw.decode("utf-8", errors="replace")
+        return json.loads(raw)
+
+    def _search_tmdb(self, query: str) -> List[ShowLookupResult]:
+        params = {"query": query, "include_adult": "false", "language": "en-US"}
+        headers = {"User-Agent": "FluxTorrent/1.0 RSS"}
+        token = self.api_key
+        if token.lower().startswith("bearer ") or token.count(".") == 2:
+            headers["Authorization"] = token if token.lower().startswith("bearer ") else f"Bearer {token}"
+        else:
+            params["api_key"] = token
+        request = Request(
+            "https://api.themoviedb.org/3/search/tv?" + urlencode(params),
+            headers=headers,
+        )
+        payload = self._request_json(request)
+        return [self._result("tmdb", item) for item in payload.get("results", [])]
+
+    def _search_tvdb(self, query: str) -> List[ShowLookupResult]:
+        if not self._tvdb_token:
+            login = Request(
+                "https://api4.thetvdb.com/v4/login",
+                data=json.dumps({"apikey": self.api_key, "pin": self.pin}).encode(),
+                headers={"Content-Type": "application/json", "User-Agent": "FluxTorrent/1.0 RSS"},
+            )
+            login_payload = self._request_json(login)
+            self._tvdb_token = str(login_payload.get("data", {}).get("token", ""))
+            if not self._tvdb_token:
+                raise ValueError("TVDB login did not return a token")
+        request = Request(
+            "https://api4.thetvdb.com/v4/search?" + urlencode({"query": query, "type": "series"}),
+            headers={
+                "Authorization": f"Bearer {self._tvdb_token}",
+                "User-Agent": "FluxTorrent/1.0 RSS",
+            },
+        )
+        payload = self._request_json(request)
+        return [self._result("tvdb", item) for item in payload.get("data", [])]
+
+    @staticmethod
+    def _result(provider: str, value: dict) -> ShowLookupResult:
+        first_air = value.get("first_air_date") or value.get("firstAired") or value.get("first_air_time") or ""
+        year = str(first_air)[:4] if first_air else str(value.get("year", ""))
+        return ShowLookupResult(
+            provider=provider,
+            identifier=str(value.get("id", value.get("seriesId", ""))),
+            name=str(value.get("name", value.get("seriesName", ""))).strip(),
+            year=year,
+            overview=str(value.get("overview", "")).strip(),
+        )
 
 
 @dataclass
@@ -54,6 +412,10 @@ class FeedItem:
         raw = self.title + self.link + self.magnet
         return hashlib.sha256(raw.encode()).hexdigest()[:32]
 
+    @property
+    def episode_match(self) -> Optional[EpisodeMatch]:
+        return parse_episode_title(self.title)
+
 
 @dataclass
 class FeedConfig:
@@ -67,6 +429,10 @@ class FeedConfig:
     save_path: str = ""
     category: str = ""
     auto_download: bool = True
+    show_rules: List[dict] = field(default_factory=list)
+    lookup_provider: str = ""
+    lookup_api_key: str = ""
+    lookup_pin: str = ""
 
     def matches(self, title: str) -> bool:
         if self.include_pattern:
@@ -81,6 +447,12 @@ class FeedConfig:
                     return False
             except re.error:
                 pass
+        if self.show_rules:
+            episode = parse_episode_title(title)
+            if episode is None:
+                return False
+            if not any(rule.matches(episode) for rule in parse_show_rules(self.show_rules)):
+                return False
         return True
 
     def to_dict(self) -> dict:
@@ -91,6 +463,10 @@ class FeedConfig:
             'exclude_pattern': self.exclude_pattern,
             'save_path': self.save_path, 'category': self.category,
             'auto_download': self.auto_download,
+            'show_rules': self.show_rules,
+            'lookup_provider': self.lookup_provider,
+            'lookup_api_key': self.lookup_api_key,
+            'lookup_pin': self.lookup_pin,
         }
 
     @classmethod
@@ -211,6 +587,8 @@ class RSSMonitor(QObject):
     new_torrent = pyqtSignal(str, str, str)   # download_url, save_path, category
     feed_checked = pyqtSignal(str, int, int)  # feed_url, total_items, new_items
     feed_error = pyqtSignal(str, str)         # feed_url, error_message
+    show_lookup_finished = pyqtSignal(str, object)  # query, ShowLookupResult list
+    show_lookup_error = pyqtSignal(str, str)        # query, error_message
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -268,6 +646,23 @@ class RSSMonitor(QObject):
     def check_all_now(self):
         for url in self._feeds:
             self._schedule_fetch(url)
+
+    def lookup_show(self, provider: str, api_key: str, pin: str, query: str):
+        """Search TVDB or TMDB without blocking the GUI thread."""
+        query = str(query or "").strip()
+        future = self._pool.submit(
+            lambda: ShowLookupClient(provider, api_key, pin).search(query)
+        )
+        future.add_done_callback(lambda f, q=query: self._on_lookup_done(q, f))
+
+    def _on_lookup_done(self, query: str, future):
+        try:
+            results = future.result()
+            QTimer.singleShot(0, lambda: self.show_lookup_finished.emit(query, results))
+        except Exception as exc:
+            message = str(exc)
+            logger.warning("RSS show lookup failed for %s: %s", query, message)
+            QTimer.singleShot(0, lambda: self.show_lookup_error.emit(query, message))
 
     def _schedule_fetch(self, url: str):
         """Submit HTTP fetch to thread pool so GUI doesn't block."""

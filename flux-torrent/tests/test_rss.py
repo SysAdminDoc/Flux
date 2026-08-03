@@ -1,7 +1,9 @@
 """Tests for RSS feed parser."""
 
 import unittest
+import json
 from flux.core.rss_monitor import parse_feed, FeedItem, FeedConfig
+from flux.core.rss_monitor import ShowLookupClient, parse_episode_title
 
 
 class TestFeedConfig(unittest.TestCase):
@@ -50,6 +52,104 @@ class TestFeedConfig(unittest.TestCase):
         self.assertEqual(restored.interval_minutes, 15)
         self.assertEqual(restored.include_pattern, "test")
         self.assertFalse(restored.auto_download)
+
+    def test_show_rules_match_episode_metadata(self):
+        config = FeedConfig(
+            url="http://test.com/rss",
+            show_rules=[{
+                "show": "The Expanse",
+                "aliases": ["Expanse"],
+                "resolutions": ["1080p"],
+                "codecs": ["x265"],
+                "groups": ["QxR"],
+            }],
+        )
+        self.assertTrue(config.matches("The.Expanse.S02E03.1080p.WEB.x265-QxR"))
+        self.assertTrue(config.matches("Expanse.S02E03.1080p.WEB.HEVC-QxR"))
+        self.assertFalse(config.matches("The.Expanse.S02E03.720p.WEB.x265-QxR"))
+        self.assertFalse(config.matches("The.Expanse.S02E03.1080p.WEB.x265-Other"))
+
+    def test_show_rule_serialization(self):
+        config = FeedConfig(
+            url="http://test.com/rss",
+            show_rules=[{"show": "Example", "seasons": [2], "episodes": [3]}],
+            lookup_provider="tmdb",
+            lookup_api_key="token",
+        )
+        restored = FeedConfig.from_dict(config.to_dict())
+        self.assertEqual(restored.show_rules[0]["show"], "Example")
+        self.assertEqual(restored.lookup_provider, "tmdb")
+        self.assertEqual(restored.lookup_api_key, "token")
+
+
+class TestEpisodeParser(unittest.TestCase):
+    def test_parse_season_episode_release(self):
+        parsed = parse_episode_title("[Subs] The.Show.S01E05-E06.1080p.WEB-DL.x265-GROUP")
+        self.assertIsNotNone(parsed)
+        self.assertEqual(parsed.show, "The Show")
+        self.assertEqual(parsed.season, 1)
+        self.assertEqual(parsed.episodes, (5, 6))
+        self.assertEqual(parsed.resolution, "1080p")
+        self.assertEqual(parsed.codec, "x265")
+        self.assertEqual(parsed.group, "Subs")
+
+    def test_parse_alt_episode_marker(self):
+        parsed = parse_episode_title("The Show - 1x05 - 720p HEVC")
+        self.assertIsNotNone(parsed)
+        self.assertEqual(parsed.show, "The Show")
+        self.assertEqual(parsed.episode, 5)
+        self.assertEqual(parsed.codec, "x265")
+
+    def test_parse_requires_show_prefix(self):
+        self.assertIsNone(parse_episode_title("S01E05.1080p.WEB"))
+
+
+class _FakeResponse:
+    def __init__(self, value):
+        self._body = json.dumps(value).encode("utf-8")
+
+    def read(self):
+        return self._body
+
+    def close(self):
+        pass
+
+
+class TestShowLookup(unittest.TestCase):
+    def test_tmdb_search(self):
+        requests = []
+
+        def opener(request, timeout):
+            requests.append(request)
+            return _FakeResponse({
+                "results": [{
+                    "id": 42,
+                    "name": "The Expanse",
+                    "first_air_date": "2015-12-14",
+                    "overview": "A science fiction series.",
+                }]
+            })
+
+        results = ShowLookupClient("tmdb", "api-key", opener=opener).search("Expanse")
+        self.assertEqual(results[0].identifier, "42")
+        self.assertEqual(results[0].year, "2015")
+        self.assertIn("api_key=api-key", requests[0].full_url)
+
+    def test_tvdb_login_then_search(self):
+        requests = []
+
+        def opener(request, timeout):
+            requests.append(request)
+            if request.full_url.endswith("/login"):
+                return _FakeResponse({"data": {"token": "session-token"}})
+            return _FakeResponse({
+                "data": [{"id": 99, "name": "The Expanse", "year": "2015"}]
+            })
+
+        results = ShowLookupClient("tvdb", "api-key", "1234", opener=opener).search("Expanse")
+        self.assertEqual(results[0].identifier, "99")
+        self.assertEqual(len(requests), 2)
+        self.assertEqual(requests[1].headers["Authorization"], "Bearer session-token")
 
 
 class TestRSSParser(unittest.TestCase):
@@ -156,7 +256,6 @@ class TestCreateTorrentImport(unittest.TestCase):
     """Test that torrent creator helpers work."""
 
     def test_auto_piece_size(self):
-        from flux.core.rss_monitor import FeedConfig
         # Just ensure import works and basic piece size calc
         from flux.gui.dialogs.create_torrent import _auto_piece_size
         # Small file -> 16KB minimum
@@ -170,7 +269,7 @@ class TestCreateTorrentImport(unittest.TestCase):
         from flux.gui.dialogs.create_torrent import _scan_files
         # Non-existent path should not crash
         try:
-            result = _scan_files("/nonexistent/path/12345")
+            _scan_files("/nonexistent/path/12345")
         except (FileNotFoundError, OSError):
             pass  # Expected
 
