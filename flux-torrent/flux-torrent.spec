@@ -33,13 +33,22 @@ for search_dir in [sys.prefix, os.path.join(sys.prefix, 'Library', 'bin'),
             if f.lower().startswith(('libssl', 'libcrypto', 'ssleay', 'libeay')):
                 openssl_dlls.append((os.path.join(search_dir, f), '.'))
 
+# Resources are optional in source checkouts.  Keep the spec buildable when a
+# checkout only carries the application code and root-level branding assets.
+datas = []
+spec_dir = os.path.abspath(SPECPATH)
+resources_dir = os.path.join(spec_dir, 'resources')
+if os.path.isdir(resources_dir):
+    datas.append((resources_dir, 'resources'))
+root_icon = os.path.abspath(os.path.join(spec_dir, '..', 'icon.png'))
+if os.path.isfile(root_icon):
+    datas.append((root_icon, '.'))
+
 a = Analysis(
     ['flux/__main__.py'],
     pathex=[],
     binaries=lt_binaries + openssl_dlls,
-    datas=[
-        ('resources', 'resources'),
-    ],
+    datas=datas,
     hiddenimports=[
         'libtorrent',
         'PyQt6',

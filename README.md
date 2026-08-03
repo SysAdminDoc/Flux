@@ -44,6 +44,10 @@ A clean, fast, privacy-focused BitTorrent client built with Python, PyQt6, and l
 - **IP Blocklist** - import PeerGuardian-format blocklists
 - **Bandwidth Scheduling** - time-based upload/download limits
 - **Peer Filtering** - auto-ban peers by client name patterns
+- **Remote Web UI / API** - optional HTTP/WebSocket control surface with qBittorrent-compatible
+  endpoints, bearer-token authentication, and TLS/mTLS support
+- **Remote desktop mode** - connect the native UI to a headless Flux daemon while retaining the
+  same torrent snapshot and detail models
 
 ## Requirements
 
@@ -74,6 +78,10 @@ python -m flux.main path/to/file.torrent
 # Open a magnet link directly
 python -m flux.main "magnet:?xt=urn:btih:..."
 ```
+
+The Remote tab in Settings can enable the embedded Web UI/API or connect this desktop to another
+Flux daemon. Use a bearer token for API access; TLS client-certificate authentication is available
+when the server is bound beyond localhost.
 
 ## Building
 

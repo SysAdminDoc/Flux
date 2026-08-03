@@ -262,6 +262,43 @@ class SessionWorker(QObject):
         except Exception as e:
             logger.error(f"Failed to add torrent file: {e}")
 
+    @pyqtSlot(bytes, str, str, str, bool, bool)
+    def add_torrent_bytes(self, data: bytes, save_path: str = "",
+                          category: str = "", tags_json: str = "[]",
+                          paused: bool = False, sequential: bool = False):
+        """Add a torrent received through the remote API without a temp file."""
+        if not self._session or not data:
+            return
+
+        try:
+            tags = json.loads(tags_json) if tags_json else []
+            ti = lt.torrent_info(lt.bdecode(data))
+            atp = lt.add_torrent_params()
+            atp.ti = ti
+            atp.save_path = save_path or self._cfg.get("default_save_path")
+
+            if paused:
+                atp.flags |= _FLAG_PAUSED
+                atp.flags &= ~_FLAG_AUTO_MANAGED
+            else:
+                atp.flags |= _FLAG_AUTO_MANAGED
+            if sequential:
+                atp.flags |= _FLAG_SEQUENTIAL
+
+            handle = self._session.add_torrent(atp)
+            info_hash = str(handle.info_hash())
+            if info_hash in self._torrents:
+                logger.warning(f"Torrent already exists: {info_hash}")
+                return
+
+            torrent = Torrent(handle, category=category, tags=tags)
+            self._torrents[info_hash] = torrent
+            self.torrent_added.emit(info_hash)
+            self._fire_hook("on_add", torrent)
+            logger.info(f"Added torrent bytes: {info_hash}")
+        except Exception as e:
+            logger.error(f"Failed to add torrent bytes: {e}")
+
     @pyqtSlot(str, str, str, str, bool)
     def add_magnet(self, uri: str, save_path: str = "",
                    category: str = "", tags_json: str = "[]",

@@ -16,3 +16,12 @@ AGENTS.md
 .ai/
 PROJECT_CONTEXT.md
 CONTINUATION_PROMPT.md
+
+# Python and packaging outputs
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+build/
+dist/
+*.spec.bak

@@ -17,7 +17,9 @@ from dataclasses import dataclass
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
-from urllib.parse import parse_qs, urlparse
+from urllib.error import HTTPError, URLError
+from urllib.parse import parse_qs, unquote, urlparse
+from urllib.request import Request, urlopen
 
 try:
     from flux import __version__ as FLUX_VERSION
@@ -27,6 +29,8 @@ except Exception:  # pragma: no cover - import fallback for frozen builds
 logger = logging.getLogger(__name__)
 
 WEBSOCKET_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+MAX_REMOTE_TORRENT_BYTES = 64 * 1024 * 1024
+REMOTE_TORRENT_TIMEOUT_SECONDS = 15
 
 
 @dataclass
@@ -217,6 +221,11 @@ class _RemoteRequestHandler(BaseHTTPRequestHandler):
             self._send_json(_qb_maindata(self.server.controller))
         elif path == "/api/v2/torrents/info":
             self._send_json(_qb_torrents(self.server.controller))
+        elif path.startswith("/api/v1/torrents/") and path.endswith("/details"):
+            prefix = "/api/v1/torrents/"
+            info_hash = unquote(path[len(prefix):-len("/details")])
+            detail = _call(self.server.controller, "get_remote_detail", info_hash)
+            self._send_json(_detail_payload(detail, info_hash))
         else:
             self._send_json({"error": "not found"}, HTTPStatus.NOT_FOUND)
 
@@ -240,6 +249,16 @@ class _RemoteRequestHandler(BaseHTTPRequestHandler):
             self._handle_hash_command(params, "resume")
         elif path in ("/api/v1/torrents/delete", "/api/v2/torrents/delete"):
             self._handle_hash_command(params, "delete")
+        elif path in ("/api/v1/torrents/recheck", "/api/v2/torrents/recheck"):
+            self._handle_hash_command(params, "recheck")
+        elif path in ("/api/v1/torrents/reannounce", "/api/v2/torrents/reannounce"):
+            self._handle_hash_command(params, "reannounce")
+        elif path == "/api/v1/torrents/set-sequential":
+            self._handle_set_sequential(params)
+        elif path == "/api/v1/torrents/set-speed-limit":
+            self._handle_set_speed_limit(params)
+        elif path == "/api/v1/torrents/queue":
+            self._handle_queue_action(params)
         else:
             self._send_json({"error": "not found"}, HTTPStatus.NOT_FOUND)
 
@@ -266,6 +285,30 @@ class _RemoteRequestHandler(BaseHTTPRequestHandler):
         category = _first(params, "category")
         tags = [t.strip() for t in (_first(params, "tags") or "").replace(",", "|").split("|") if t.strip()]
         paused = _first(params, "paused").lower() in ("true", "1", "yes")
+        sequential = _first(params, "sequential").lower() in ("true", "1", "yes")
+
+        encoded = _first(params, "torrent_data")
+        if encoded:
+            try:
+                data = base64.b64decode(encoded, validate=True)
+            except (ValueError, TypeError):
+                self._send_json({"error": "invalid torrent_data"}, HTTPStatus.BAD_REQUEST)
+                return
+            if len(data) > MAX_REMOTE_TORRENT_BYTES:
+                self._send_json({"error": "torrent file is too large"}, HTTPStatus.REQUEST_ENTITY_TOO_LARGE)
+                return
+            added = bool(_call(
+                self.server.controller,
+                "add_torrent_bytes",
+                data,
+                save_path,
+                category,
+                tags,
+                paused,
+                sequential,
+            ))
+            self._send_json({"added": 1 if added else 0, "unsupported": 0 if added else 1})
+            return
 
         added = 0
         unsupported = 0
@@ -273,6 +316,21 @@ class _RemoteRequestHandler(BaseHTTPRequestHandler):
             if item.startswith("magnet:"):
                 if _call(self.server.controller, "add_magnet", item, save_path, category, tags, paused):
                     added += 1
+            elif item.startswith(("http://", "https://")):
+                data = _download_torrent(item)
+                if data is not None and _call(
+                    self.server.controller,
+                    "add_torrent_bytes",
+                    data,
+                    save_path,
+                    category,
+                    tags,
+                    paused,
+                    sequential,
+                ):
+                    added += 1
+                else:
+                    unsupported += 1
             else:
                 if _call(self.server.controller, "add_torrent_url", item, save_path, category, tags, paused):
                     added += 1
@@ -298,7 +356,36 @@ class _RemoteRequestHandler(BaseHTTPRequestHandler):
                     _call(self.server.controller, "resume_torrent", info_hash)
                 elif action == "delete":
                     _call(self.server.controller, "remove_torrent", info_hash, delete_files)
+                elif action == "recheck":
+                    _call(self.server.controller, "force_recheck", info_hash)
+                elif action == "reannounce":
+                    _call(self.server.controller, "force_reannounce", info_hash)
         self._send_json({"ok": True, "count": len(requested)})
+
+    def _handle_set_sequential(self, params: dict[str, list[str]]):
+        hashes = _hashes_from_request(_first(params, "hashes") or _first(params, "hash"), self.server.controller)
+        enabled = _first(params, "enabled").lower() in ("true", "1", "yes")
+        for info_hash in hashes:
+            _call(self.server.controller, "set_sequential", info_hash, enabled)
+        self._send_json({"ok": True, "count": len(hashes)})
+
+    def _handle_set_speed_limit(self, params: dict[str, list[str]]):
+        hashes = _hashes_from_request(_first(params, "hashes") or _first(params, "hash"), self.server.controller)
+        download = int(_first(params, "download", "0") or 0)
+        upload = int(_first(params, "upload", "0") or 0)
+        for info_hash in hashes:
+            _call(self.server.controller, "set_torrent_speed_limit", info_hash, download, upload)
+        self._send_json({"ok": True, "count": len(hashes)})
+
+    def _handle_queue_action(self, params: dict[str, list[str]]):
+        hashes = _hashes_from_request(_first(params, "hashes") or _first(params, "hash"), self.server.controller)
+        action = _first(params, "action")
+        if action not in {"top", "up", "down", "bottom"}:
+            self._send_json({"error": "invalid queue action"}, HTTPStatus.BAD_REQUEST)
+            return
+        for info_hash in hashes:
+            _call(self.server.controller, "queue_torrent", info_hash, action)
+        self._send_json({"ok": True, "count": len(hashes)})
 
     def _handle_websocket(self):
         if self.headers.get("Upgrade", "").lower() != "websocket":
@@ -422,8 +509,32 @@ def _torrent_payload(snap: Any) -> dict[str, Any]:
         "tags": list(getattr(snap, "tags", []) or []),
         "save_path": str(getattr(snap, "save_path", "") or ""),
         "added_time": float(getattr(snap, "added_time", 0.0) or 0.0),
+        "download_limit": int(getattr(snap, "download_limit", 0) or 0),
+        "upload_limit": int(getattr(snap, "upload_limit", 0) or 0),
         "error": str(getattr(snap, "error", "") or ""),
     }
+
+
+def _detail_payload(detail: Any, info_hash: str) -> dict[str, Any]:
+    """Serialize a DetailData-like object without exposing Qt/libtorrent state."""
+    return {
+        "info_hash": str(getattr(detail, "info_hash", info_hash) or info_hash),
+        "files": [_object_payload(item) for item in getattr(detail, "files", []) or []],
+        "peers": [_object_payload(item) for item in getattr(detail, "peers", []) or []],
+        "trackers": [_object_payload(item) for item in getattr(detail, "trackers", []) or []],
+        "pieces": list(getattr(detail, "pieces", []) or []),
+        "piece_length": int(getattr(detail, "piece_length", 0) or 0),
+        "download_history": list(getattr(detail, "dl_history", []) or []),
+        "upload_history": list(getattr(detail, "ul_history", []) or []),
+    }
+
+
+def _object_payload(value: Any) -> dict[str, Any]:
+    if hasattr(value, "__dataclass_fields__"):
+        return {name: getattr(value, name) for name in value.__dataclass_fields__}
+    if isinstance(value, dict):
+        return dict(value)
+    return {}
 
 
 def _qb_maindata(controller: Any) -> dict[str, Any]:
@@ -492,7 +603,13 @@ def _qb_preferences(controller: Any) -> dict[str, Any]:
 def _safe_settings(controller: Any) -> dict[str, Any]:
     settings = _call(controller, "get_remote_settings") or _call(controller, "get_settings") or {}
     safe = dict(settings)
-    for key in ("proxy_pass", "remote_token", "remote_password"):
+    for key in (
+        "proxy_pass",
+        "remote_token",
+        "remote_password",
+        "remote_client_token",
+        "remote_client_password",
+    ):
         if key in safe and safe[key]:
             safe[key] = "********"
     return safe
@@ -507,6 +624,28 @@ def _hashes_from_request(raw: str, controller: Any) -> list[str]:
 
 def _split_urls(raw: str) -> list[str]:
     return [line.strip() for line in raw.replace("\r", "\n").split("\n") if line.strip()]
+
+
+def _download_torrent(url: str) -> bytes | None:
+    """Download a qB-compatible torrent URL with a bounded response size."""
+    try:
+        request = Request(url, headers={"User-Agent": f"FluxTorrent/{FLUX_VERSION}"})
+        with urlopen(request, timeout=REMOTE_TORRENT_TIMEOUT_SECONDS) as response:
+            chunks: list[bytes] = []
+            total = 0
+            while True:
+                chunk = response.read(1024 * 1024)
+                if not chunk:
+                    break
+                total += len(chunk)
+                if total > MAX_REMOTE_TORRENT_BYTES:
+                    logger.warning("Remote torrent URL exceeded size limit: %s", url)
+                    return None
+                chunks.append(chunk)
+            return b"".join(chunks)
+    except (HTTPError, URLError, OSError, ValueError) as exc:
+        logger.warning("Remote torrent URL failed: %s: %s", url, exc)
+        return None
 
 
 def _state_name(state: Any) -> str:

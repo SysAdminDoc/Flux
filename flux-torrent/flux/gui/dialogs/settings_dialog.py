@@ -487,6 +487,43 @@ class SettingsDialog(QDialog):
         tg.addWidget(require_client, 3, 0, 1, 3)
 
         layout.addWidget(tls_group)
+
+        client_group = QGroupBox("Remote desktop client mode")
+        cg = QGridLayout(client_group)
+        cg.setSpacing(8)
+
+        client_enabled = QCheckBox("Connect this desktop to a remote Flux daemon")
+        self._widgets["remote_client_enabled"] = client_enabled
+        cg.addWidget(client_enabled, 0, 0, 1, 3)
+
+        cg.addWidget(QLabel("Daemon URL:"), 1, 0)
+        client_url = QLineEdit()
+        client_url.setPlaceholderText("http://127.0.0.1:8090/")
+        self._widgets["remote_client_url"] = client_url
+        cg.addWidget(client_url, 1, 1, 1, 2)
+
+        cg.addWidget(QLabel("Token:"), 2, 0)
+        client_token = QLineEdit()
+        client_token.setEchoMode(QLineEdit.EchoMode.Password)
+        self._widgets["remote_client_token"] = client_token
+        cg.addWidget(client_token, 2, 1, 1, 2)
+
+        cg.addWidget(QLabel("Username:"), 3, 0)
+        client_username = QLineEdit()
+        self._widgets["remote_client_username"] = client_username
+        cg.addWidget(client_username, 3, 1, 1, 2)
+
+        cg.addWidget(QLabel("Password:"), 4, 0)
+        client_password = QLineEdit()
+        client_password.setEchoMode(QLineEdit.EchoMode.Password)
+        self._widgets["remote_client_password"] = client_password
+        cg.addWidget(client_password, 4, 1, 1, 2)
+
+        client_tls = QCheckBox("Verify TLS certificates")
+        self._widgets["remote_client_verify_tls"] = client_tls
+        cg.addWidget(client_tls, 5, 0, 1, 3)
+
+        layout.addWidget(client_group)
         layout.addStretch()
         return page
 
@@ -597,6 +634,16 @@ class SettingsDialog(QDialog):
         self._widgets["remote_require_client_cert"].setChecked(
             s.get("remote_require_client_cert", False)
         )
+        self._widgets["remote_client_enabled"].setChecked(s.get("remote_client_enabled", False))
+        self._widgets["remote_client_url"].setText(
+            s.get("remote_client_url", "http://127.0.0.1:8090/")
+        )
+        self._widgets["remote_client_token"].setText(s.get("remote_client_token", ""))
+        self._widgets["remote_client_username"].setText(s.get("remote_client_username", "admin"))
+        self._widgets["remote_client_password"].setText(s.get("remote_client_password", ""))
+        self._widgets["remote_client_verify_tls"].setChecked(
+            s.get("remote_client_verify_tls", True)
+        )
 
         # UI
         theme_key = s.get("theme", "dark")
@@ -671,6 +718,12 @@ class SettingsDialog(QDialog):
         s.set("remote_tls_keyfile", self._widgets["remote_tls_keyfile"].text().strip())
         s.set("remote_tls_ca_file", self._widgets["remote_tls_ca_file"].text().strip())
         s.set("remote_require_client_cert", self._widgets["remote_require_client_cert"].isChecked())
+        s.set("remote_client_enabled", self._widgets["remote_client_enabled"].isChecked())
+        s.set("remote_client_url", self._widgets["remote_client_url"].text().strip())
+        s.set("remote_client_token", self._widgets["remote_client_token"].text())
+        s.set("remote_client_username", self._widgets["remote_client_username"].text().strip())
+        s.set("remote_client_password", self._widgets["remote_client_password"].text())
+        s.set("remote_client_verify_tls", self._widgets["remote_client_verify_tls"].isChecked())
 
         # UI
         new_theme = self._widgets["theme"].currentData()

@@ -87,6 +87,15 @@ class Settings:
         "remote_tls_keyfile": "",
         "remote_tls_ca_file": "",
         "remote_require_client_cert": False,
+        # Remote desktop client mode
+        "remote_client_enabled": False,
+        "remote_client_url": "http://127.0.0.1:8090/",
+        "remote_client_token": "",
+        "remote_client_username": "admin",
+        "remote_client_password": "",
+        "remote_client_timeout": 10.0,
+        "remote_client_poll_ms": 1000,
+        "remote_client_verify_tls": True,
         # Webhook notifications
         "webhook_enabled": False,
         "webhook_url": "",

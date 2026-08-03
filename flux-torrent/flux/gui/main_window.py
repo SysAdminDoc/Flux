@@ -22,6 +22,7 @@ from PyQt6.QtWidgets import (
 )
 
 from flux.core.session_worker import ThreadedSession, SessionStats, DetailData
+from flux.core.remote_client import RemoteThreadedSession
 from flux.core.settings import Settings
 from flux.core.torrent import TorrentState
 from flux.core.remote import RemoteControlServer
@@ -84,6 +85,7 @@ class MainWindow(QMainWindow):
     """Flux Torrent Client main window."""
 
     remote_add_magnet_requested = pyqtSignal(str, str, str, str, bool)
+    remote_add_torrent_bytes_requested = pyqtSignal(bytes, str, str, str, bool, bool)
     remote_pause_torrent_requested = pyqtSignal(str)
     remote_resume_torrent_requested = pyqtSignal(str)
     remote_remove_torrent_requested = pyqtSignal(str, bool)
@@ -97,6 +99,7 @@ class MainWindow(QMainWindow):
         self._selected_info_hash: str | None = None
         self._tray: QSystemTrayIcon | None = None
         self._last_stats: SessionStats | None = None
+        self._last_detail = DetailData()
         self._remote_server: RemoteControlServer | None = None
         self._rss_monitor = None
 
@@ -113,7 +116,10 @@ class MainWindow(QMainWindow):
         self._setup_system_tray()
 
         # Create threaded session and connect signals
-        self._threaded = ThreadedSession(self._settings)
+        if self._settings.get("remote_client_enabled", False):
+            self._threaded = RemoteThreadedSession(self._settings)
+        else:
+            self._threaded = ThreadedSession(self._settings)
         self._worker = self._threaded.worker
         self._connect_signals()
         self._threaded.start()
@@ -509,6 +515,7 @@ class MainWindow(QMainWindow):
 
         # Remote API -> worker
         self.remote_add_magnet_requested.connect(w.add_magnet)
+        self.remote_add_torrent_bytes_requested.connect(w.add_torrent_bytes)
         self.remote_pause_torrent_requested.connect(w.pause_torrent)
         self.remote_resume_torrent_requested.connect(w.resume_torrent)
         self.remote_remove_torrent_requested.connect(w.remove_torrent)
@@ -599,6 +606,11 @@ class MainWindow(QMainWindow):
     def get_remote_settings(self) -> dict:
         return self._settings.get_all()
 
+    def get_remote_detail(self, info_hash: str) -> DetailData:
+        if self._last_detail.info_hash == info_hash:
+            return self._last_detail
+        return DetailData(info_hash=info_hash)
+
     def add_magnet(self, uri: str, save_path: str = "", category: str = "",
                    tags: list | None = None, paused: bool = False) -> bool:
         if not uri.startswith("magnet:"):
@@ -613,6 +625,21 @@ class MainWindow(QMainWindow):
         if url.startswith("magnet:"):
             return self.add_magnet(url, save_path, category, tags, paused)
         return False
+
+    def add_torrent_bytes(self, data: bytes, save_path: str = "", category: str = "",
+                          tags: list | None = None, paused: bool = False,
+                          sequential: bool = False) -> bool:
+        if not data:
+            return False
+        self.remote_add_torrent_bytes_requested.emit(
+            data,
+            save_path,
+            category,
+            json.dumps(tags or []),
+            bool(paused),
+            bool(sequential),
+        )
+        return True
 
     def pause_torrent(self, info_hash: str) -> bool:
         self.remote_pause_torrent_requested.emit(info_hash)
@@ -1043,6 +1070,7 @@ class MainWindow(QMainWindow):
 
     def _on_detail_updated(self, detail: DetailData):
         """Handle detail data from worker for focused torrent."""
+        self._last_detail = detail
         self._detail_panel.update_detail(detail)
 
     def _on_peer_banned(self, ip, reason):
