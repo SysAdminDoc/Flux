@@ -5,7 +5,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 import unittest
 import tempfile
-from flux.core.settings import Settings, build_i2p_settings
+from flux.core.settings import Settings, build_i2p_settings, build_tracker_proxy_rules
 
 
 class TestSettings(unittest.TestCase):
@@ -41,6 +41,15 @@ class TestSettings(unittest.TestCase):
         )
         self.assertEqual(build_i2p_settings({"i2p_enabled": True, "i2p_port": 0}), {})
         self.assertEqual(build_i2p_settings({"i2p_enabled": True, "i2p_port": "bad"}), {})
+
+    def test_tracker_proxy_rules_are_normalized(self):
+        rules = build_tracker_proxy_rules({
+            "tracker_proxy_rules": "https://Tracker.Example/announce | socks5://127.0.0.1:1080"
+        })
+        self.assertEqual(rules, [{
+            "tracker_url": "https://tracker.example/announce",
+            "proxy_url": "socks5://127.0.0.1:1080",
+        }])
 
     def test_set_get(self):
         self.settings.set("listen_port", 12345)

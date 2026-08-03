@@ -83,6 +83,7 @@ class TorrentTracker:
     seeds: int = 0
     peers: int = 0
     message: str = ""
+    proxy: str = ""
 
 
 @dataclass

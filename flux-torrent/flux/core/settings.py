@@ -5,6 +5,8 @@ import sqlite3
 from pathlib import Path
 from typing import Any, Optional
 
+from flux.core.tracker_proxy import tracker_proxy_rules_to_settings
+
 
 class Settings:
     """Persistent settings storage backed by SQLite."""
@@ -24,6 +26,7 @@ class Settings:
         "proxy_auth": False,
         "proxy_user": "",
         "proxy_pass": "",
+        "tracker_proxy_rules": [],
         # I2P SAM bridge
         "i2p_enabled": False,
         "i2p_hostname": "127.0.0.1",
@@ -215,3 +218,8 @@ def build_i2p_settings(values: dict[str, Any]) -> dict[str, Any]:
         "i2p_port": port,
         "allow_i2p_mixed": bool(values.get("i2p_allow_mixed", False)),
     }
+
+
+def build_tracker_proxy_rules(values: dict[str, Any]) -> list[dict[str, str]]:
+    """Return validated per-tracker proxy rules for a worker snapshot."""
+    return tracker_proxy_rules_to_settings(values.get("tracker_proxy_rules", []))

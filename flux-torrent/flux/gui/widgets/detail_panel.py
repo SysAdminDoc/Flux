@@ -134,9 +134,9 @@ class DetailPanel(QWidget):
         trackers_layout.addLayout(tracker_toolbar)
 
         self._trackers_table = QTableWidget()
-        self._trackers_table.setColumnCount(5)
+        self._trackers_table.setColumnCount(6)
         self._trackers_table.setHorizontalHeaderLabels(
-            ["URL", "Status", "Seeds", "Peers", "Message"]
+            ["URL", "Status", "Seeds", "Peers", "Proxy", "Message"]
         )
         self._trackers_table.horizontalHeader().setStretchLastSection(True)
         self._trackers_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
@@ -463,7 +463,7 @@ class DetailPanel(QWidget):
         self._trackers_table.setRowCount(len(trackers))
 
         for i, tr in enumerate(trackers):
-            items = [tr.url, tr.status, str(tr.seeds), str(tr.peers), tr.message]
+            items = [tr.url, tr.status, str(tr.seeds), str(tr.peers), tr.proxy or "Direct", tr.message]
             for j, text in enumerate(items):
                 item = QTableWidgetItem(text)
                 item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)

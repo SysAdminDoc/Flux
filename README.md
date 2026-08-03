@@ -49,6 +49,8 @@ A clean, fast, privacy-focused BitTorrent client built with Python, PyQt6, and l
   endpoints, bearer-token authentication, and TLS/mTLS support
 - **Remote desktop mode** - connect the native UI to a headless Flux daemon while retaining the
   same torrent snapshot and detail models
+- **Per-tracker proxy routing** - send HTTP(S) tracker announces through individual SOCKS5 or
+  HTTP(S) proxies while keeping unrelated trackers direct
 
 ## Requirements
 
@@ -69,6 +71,10 @@ python fix_libtorrent.py
 ```
 
 I2P transport is configured in Settings > Connection and requires a running local SAM bridge.
+Per-tracker proxy rules are configured in the same tab, one per line as
+`tracker URL | proxy URL`. Flux supports `socks5://`, `http://`, and `https://` proxy endpoints;
+configured HTTP(S) tracker announces are routed through the selected proxy and returned peers are
+added to the torrent. UDP trackers remain on libtorrent's direct announce path.
 
 ## Usage
 

@@ -21,6 +21,8 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, unquote, urlparse
 from urllib.request import Request, urlopen
 
+from flux.core.tracker_proxy import redact_tracker_proxy_rules
+
 try:
     from flux import __version__ as FLUX_VERSION
 except Exception:  # pragma: no cover - import fallback for frozen builds
@@ -608,13 +610,17 @@ def _safe_settings(controller: Any) -> dict[str, Any]:
     safe = dict(settings)
     for key in (
         "proxy_pass",
+        "tracker_proxy_rules",
         "remote_token",
         "remote_password",
         "remote_client_token",
         "remote_client_password",
     ):
         if key in safe and safe[key]:
-            safe[key] = "********"
+            if key == "tracker_proxy_rules":
+                safe[key] = redact_tracker_proxy_rules(safe[key])
+            else:
+                safe[key] = "********"
     return safe
 
 

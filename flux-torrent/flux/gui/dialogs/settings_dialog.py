@@ -5,8 +5,10 @@ from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QTabWidget, QWidget,
     QLabel, QLineEdit, QSpinBox, QDoubleSpinBox, QCheckBox,
     QComboBox, QPushButton, QGroupBox, QGridLayout, QFileDialog,
-    QRadioButton, QButtonGroup, QFrame
+    QRadioButton, QButtonGroup, QFrame, QPlainTextEdit
 )
+
+from flux.core.settings import build_tracker_proxy_rules
 
 
 class SettingsDialog(QDialog):
@@ -316,6 +318,20 @@ class SettingsDialog(QDialog):
         i2p_layout.addWidget(i2p_mixed, 3, 0, 1, 3)
 
         layout.addWidget(i2p_group)
+
+        tracker_proxy_group = QGroupBox("Per-tracker proxy routing")
+        tracker_proxy_layout = QVBoxLayout(tracker_proxy_group)
+        tracker_proxy_layout.addWidget(QLabel(
+            "One rule per line: tracker URL | proxy URL. Supported proxies are SOCKS5 and HTTP(S)."
+        ))
+        tracker_proxy_rules = QPlainTextEdit()
+        tracker_proxy_rules.setPlaceholderText(
+            "https://tracker.example/announce | socks5://user:password@127.0.0.1:1080"
+        )
+        tracker_proxy_rules.setMaximumHeight(105)
+        self._widgets["tracker_proxy_rules"] = tracker_proxy_rules
+        tracker_proxy_layout.addWidget(tracker_proxy_rules)
+        layout.addWidget(tracker_proxy_group)
 
         # Protocol
         proto_group = QGroupBox("Protocol")
@@ -632,6 +648,14 @@ class SettingsDialog(QDialog):
         self._widgets["i2p_hostname"].setText(s.get("i2p_hostname", "127.0.0.1"))
         self._widgets["i2p_port"].setValue(s.get("i2p_port", 7656))
         self._widgets["i2p_allow_mixed"].setChecked(s.get("i2p_allow_mixed", False))
+        rules = s.get("tracker_proxy_rules", []) or []
+        if isinstance(rules, dict):
+            rules = [{"tracker_url": key, "proxy_url": value} for key, value in rules.items()]
+        self._widgets["tracker_proxy_rules"].setPlainText("\n".join(
+            f"{item.get('tracker_url', item.get('tracker', ''))} | "
+            f"{item.get('proxy_url', item.get('proxy', ''))}"
+            for item in rules if isinstance(item, dict)
+        ))
         self._widgets["dht_enabled"].setChecked(s.get("dht_enabled", True))
         self._widgets["pex_enabled"].setChecked(s.get("pex_enabled", True))
         self._widgets["lsd_enabled"].setChecked(s.get("lsd_enabled", True))
@@ -722,6 +746,9 @@ class SettingsDialog(QDialog):
         s.set("i2p_hostname", self._widgets["i2p_hostname"].text().strip() or "127.0.0.1")
         s.set("i2p_port", self._widgets["i2p_port"].value())
         s.set("i2p_allow_mixed", self._widgets["i2p_allow_mixed"].isChecked())
+        s.set("tracker_proxy_rules", build_tracker_proxy_rules({
+            "tracker_proxy_rules": self._widgets["tracker_proxy_rules"].toPlainText()
+        }))
         s.set("dht_enabled", self._widgets["dht_enabled"].isChecked())
         s.set("pex_enabled", self._widgets["pex_enabled"].isChecked())
         s.set("lsd_enabled", self._widgets["lsd_enabled"].isChecked())

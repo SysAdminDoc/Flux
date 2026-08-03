@@ -23,9 +23,10 @@ import libtorrent as lt
 from PyQt6.QtCore import QObject, QTimer, pyqtSignal, pyqtSlot, QThread, QMetaObject, Qt
 
 from flux.core.torrent import Torrent, get_info_hashes
-from flux.core.settings import Settings, build_i2p_settings
+from flux.core.settings import Settings, build_i2p_settings, build_tracker_proxy_rules
 from flux.core.peer_filter import PeerFilter
 from flux.core.script_hooks import ScriptHookRunner
+from flux.core.tracker_proxy import TrackerProxyManager
 
 logger = logging.getLogger(__name__)
 
@@ -92,6 +93,7 @@ class SessionWorker(QObject):
         self._hook_runner.configure(self._cfg.get("script_hooks", []))
         self._resume_db: Optional[sqlite3.Connection] = None
         self._ip_filter: Optional[lt.ip_filter] = None
+        self._tracker_proxy_manager = TrackerProxyManager()
 
         self._session_dl_history: list = []
         self._session_ul_history: list = []
@@ -170,6 +172,7 @@ class SessionWorker(QObject):
         self._session = lt.session(settings)
         self._ip_filter = self._session.get_ip_filter()
         self._peer_filter.configure(self._cfg)
+        self._tracker_proxy_manager.configure(build_tracker_proxy_rules(self._cfg))
 
         self._init_resume_db()
         self._load_ip_blocklist()
@@ -208,6 +211,8 @@ class SessionWorker(QObject):
             self._save_timer.stop()
         if self._schedule_timer:
             self._schedule_timer.stop()
+
+        self._tracker_proxy_manager.close()
 
         if self._session:
             self._session.pause()
@@ -254,6 +259,7 @@ class SessionWorker(QObject):
             if info_hash not in self._torrents:
                 torrent = Torrent(handle, category=category, tags=tags)
                 self._torrents[info_hash] = torrent
+                self._tracker_proxy_manager.sync_torrent(torrent)
                 self.torrent_added.emit(info_hash)
                 self._fire_hook("on_add", torrent)
                 logger.info(f"Added torrent: {torrent.name}")
@@ -294,6 +300,7 @@ class SessionWorker(QObject):
 
             torrent = Torrent(handle, category=category, tags=tags)
             self._torrents[info_hash] = torrent
+            self._tracker_proxy_manager.sync_torrent(torrent)
             self.torrent_added.emit(info_hash)
             self._fire_hook("on_add", torrent)
             logger.info(f"Added torrent bytes: {info_hash}")
@@ -332,6 +339,7 @@ class SessionWorker(QObject):
             if info_hash not in self._torrents:
                 torrent = Torrent(handle, category=category, tags=tags)
                 self._torrents[info_hash] = torrent
+                self._tracker_proxy_manager.sync_torrent(torrent)
                 self.torrent_added.emit(info_hash)
                 self._fire_hook("on_add", torrent)
                 logger.info(f"Added magnet: {info_hash}")
@@ -347,6 +355,7 @@ class SessionWorker(QObject):
 
         name = torrent.name
         self._fire_hook("on_delete", torrent)
+        self._tracker_proxy_manager.forget_torrent(info_hash)
         if delete_files:
             try:
                 self._session.remove_torrent(torrent.handle, lt.session.delete_files)
@@ -456,12 +465,14 @@ class SessionWorker(QObject):
         t = self._torrents.get(info_hash)
         if t:
             t.add_tracker(url)
+            self._tracker_proxy_manager.sync_torrent(t)
 
     @pyqtSlot(str, str)
     def remove_tracker(self, info_hash: str, url: str):
         """Remove a tracker from a torrent."""
         t = self._torrents.get(info_hash)
         if t:
+            self._tracker_proxy_manager.forget_tracker(info_hash, url)
             t.remove_tracker(url)
 
     @pyqtSlot(str)
@@ -480,6 +491,7 @@ class SessionWorker(QObject):
         """Re-apply settings. Accepts a fresh config dict from the GUI thread."""
         if cfg is not None:
             self._cfg = cfg
+            self._tracker_proxy_manager.configure(build_tracker_proxy_rules(self._cfg))
         if not self._session:
             return
         settings = {}
@@ -496,6 +508,8 @@ class SessionWorker(QObject):
         self._peer_filter.configure(self._cfg)
         self._hook_runner.configure(self._cfg.get("script_hooks", []))
         self._load_ip_blocklist()
+        for torrent in self._torrents.values():
+            self._tracker_proxy_manager.sync_torrent(torrent)
 
     # --- Internal: Script hooks ---
 
@@ -597,6 +611,7 @@ class SessionWorker(QObject):
                 torrent.added_time = added_time or time.time()
                 info_hash, _, _ = get_info_hashes(handle)
                 self._torrents[info_hash] = torrent
+                self._tracker_proxy_manager.sync_torrent(torrent)
                 count += 1
             except Exception as e:
                 logger.error(f"Failed to load torrent {info_hash}: {e}")
@@ -774,6 +789,11 @@ class SessionWorker(QObject):
         if not self._session:
             return
 
+        self._tracker_proxy_manager.tick(
+            self._torrents.values(), self._session,
+            int(self._cfg.get("listen_port", 6881) or 0),
+        )
+
         try:
             status = self._session.status()
             dl_rate = status.download_rate
@@ -821,7 +841,8 @@ class SessionWorker(QObject):
                         info_hash=self._focused_hash,
                         files=t.get_files(),
                         peers=t.get_peers(),
-                        trackers=t.get_trackers(),
+                        trackers=(t.get_trackers() +
+                                  self._tracker_proxy_manager.tracker_snapshots(self._focused_hash)),
                         pieces=t.get_piece_states(),
                         piece_length=t.piece_length,
                         dl_history=t.speed_history_dl[:],

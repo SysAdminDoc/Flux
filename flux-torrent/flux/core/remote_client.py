@@ -568,6 +568,7 @@ def _tracker_from_payload(item: dict[str, Any]) -> TorrentTracker:
         seeds=_as_int(item.get("seeds")),
         peers=_as_int(item.get("peers")),
         message=str(item.get("message", "") or ""),
+        proxy=str(item.get("proxy", "") or ""),
     )
 
 

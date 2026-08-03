@@ -9,6 +9,8 @@ All notable changes to Flux will be documented in this file.
 - Added remote detail, torrent URL/upload, queue, speed-limit, recheck, and reannounce API routes.
 - Preserved full v1/v2 info-hash pairs and used the 64-character v2 identity for v2-only torrents.
 - Added validated I2P SAM bridge settings and session wiring for outbound I2P transport.
+- Added per-tracker HTTP(S) announce routing through SOCKS5 or HTTP(S) proxies, including peer
+  injection, tracker status reporting, and credential-redacted remote settings.
 
 ## [v0.1.0] - %Y->- (HEAD -> main, origin/main, origin/HEAD)
 
