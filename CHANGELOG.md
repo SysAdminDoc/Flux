@@ -12,6 +12,8 @@ All notable changes to Flux will be documented in this file.
 - Added per-tracker HTTP(S) announce routing through SOCKS5 or HTTP(S) proxies, including peer
   injection, tracker status reporting, and credential-redacted remote settings.
 - Added a tracker-table announce test action for direct HTTP(S)/UDP and configured proxy routes.
+- Added category/tag-scoped label automation for completion moves, tracker overrides, ratio limits,
+  and upload limits.
 
 ## [v0.1.0] - %Y->- (HEAD -> main, origin/main, origin/HEAD)
 

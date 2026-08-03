@@ -516,6 +516,17 @@ class Torrent:
         except Exception as e:
             logger.warning(f"remove_tracker failed: {e}")
 
+    def replace_trackers(self, urls: list[str] | tuple[str, ...]):
+        """Replace this torrent's trackers with a validated URL list."""
+        try:
+            entries = [
+                {"url": str(url).strip(), "tier": index}
+                for index, url in enumerate(urls) if str(url).strip()
+            ]
+            self._handle.replace_trackers(entries)
+        except Exception as e:
+            logger.warning(f"replace_trackers failed: {e}")
+
     # --- Pieces ---
 
     def get_piece_states(self) -> list:

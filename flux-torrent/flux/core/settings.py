@@ -5,6 +5,7 @@ import sqlite3
 from pathlib import Path
 from typing import Any, Optional
 
+from flux.core.automation import build_label_rules
 from flux.core.tracker_proxy import tracker_proxy_rules_to_settings
 
 
@@ -27,6 +28,7 @@ class Settings:
         "proxy_user": "",
         "proxy_pass": "",
         "tracker_proxy_rules": [],
+        "label_rules": [],
         # I2P SAM bridge
         "i2p_enabled": False,
         "i2p_hostname": "127.0.0.1",
@@ -223,3 +225,8 @@ def build_i2p_settings(values: dict[str, Any]) -> dict[str, Any]:
 def build_tracker_proxy_rules(values: dict[str, Any]) -> list[dict[str, str]]:
     """Return validated per-tracker proxy rules for a worker snapshot."""
     return tracker_proxy_rules_to_settings(values.get("tracker_proxy_rules", []))
+
+
+def build_label_automation_rules(values: dict[str, Any]) -> list[dict[str, Any]]:
+    """Return validated label-scoped automation rules."""
+    return build_label_rules(values)

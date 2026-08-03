@@ -51,6 +51,8 @@ A clean, fast, privacy-focused BitTorrent client built with Python, PyQt6, and l
   same torrent snapshot and detail models
 - **Per-tracker proxy routing** - send HTTP(S) tracker announces through individual SOCKS5 or
   HTTP(S) proxies while keeping unrelated trackers direct
+- **Label automation** - apply category/tag-scoped completion paths, tracker lists, ratio limits,
+  and upload limits
 
 ## Requirements
 
@@ -77,6 +79,9 @@ configured HTTP(S) tracker announces are routed through the selected proxy and r
 added to the torrent. UDP trackers remain on libtorrent's direct announce path. Right-click any
 tracker in the detail panel to run a one-shot announce test and inspect its response class and peer
 counts.
+Label automation rules are configured in Settings > Behavior as a JSON array. Each rule uses a
+`label` matching a category or tag and can set `move_completed_path`, `tracker_overrides`,
+`ratio_limit`, and `upload_limit` (bytes/s).
 
 ## Usage
 

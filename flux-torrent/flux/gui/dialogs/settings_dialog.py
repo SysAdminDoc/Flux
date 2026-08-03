@@ -1,5 +1,7 @@
 """Settings dialog for Flux Torrent Client."""
 
+import json
+
 from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QTabWidget, QWidget,
@@ -8,7 +10,7 @@ from PyQt6.QtWidgets import (
     QRadioButton, QButtonGroup, QFrame, QPlainTextEdit
 )
 
-from flux.core.settings import build_tracker_proxy_rules
+from flux.core.settings import build_tracker_proxy_rules, build_label_automation_rules
 
 
 class SettingsDialog(QDialog):
@@ -442,6 +444,21 @@ class SettingsDialog(QDialog):
 
         layout.addWidget(tracker_group)
 
+        label_group = QGroupBox("Label automation rules")
+        label_layout = QVBoxLayout(label_group)
+        label_layout.addWidget(QLabel(
+            "JSON array; label matches a category or tag. Limits are bytes/s."
+        ))
+        label_rules = QPlainTextEdit()
+        label_rules.setPlaceholderText(
+            '[{"label":"movies","move_completed_path":"D:/Movies",'
+            '"tracker_overrides":[],"ratio_limit":2.0,"upload_limit":0}]'
+        )
+        label_rules.setMaximumHeight(145)
+        self._widgets["label_rules"] = label_rules
+        label_layout.addWidget(label_rules)
+        layout.addWidget(label_group)
+
         layout.addStretch()
         return page
 
@@ -673,6 +690,9 @@ class SettingsDialog(QDialog):
         self._widgets["start_minimized"].setChecked(s.get("start_minimized", False))
         self._widgets["auto_update_trackers"].setChecked(s.get("auto_update_trackers", False))
         self._widgets["tracker_list_url"].setText(s.get("tracker_list_url", ""))
+        self._widgets["label_rules"].setPlainText(json.dumps(
+            s.get("label_rules", []) or [], indent=2
+        ))
 
         # Remote
         self._widgets["remote_enabled"].setChecked(s.get("remote_enabled", False))
@@ -766,6 +786,11 @@ class SettingsDialog(QDialog):
         s.set("start_minimized", self._widgets["start_minimized"].isChecked())
         s.set("auto_update_trackers", self._widgets["auto_update_trackers"].isChecked())
         s.set("tracker_list_url", self._widgets["tracker_list_url"].text())
+        try:
+            label_rules = json.loads(self._widgets["label_rules"].toPlainText() or "[]")
+        except json.JSONDecodeError:
+            label_rules = s.get("label_rules", []) or []
+        s.set("label_rules", build_label_automation_rules({"label_rules": label_rules}))
 
         # Remote
         s.set("remote_enabled", self._widgets["remote_enabled"].isChecked())

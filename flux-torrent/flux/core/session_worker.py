@@ -23,7 +23,13 @@ import libtorrent as lt
 from PyQt6.QtCore import QObject, QTimer, pyqtSignal, pyqtSlot, QThread, QMetaObject, Qt
 
 from flux.core.torrent import Torrent, get_info_hashes
-from flux.core.settings import Settings, build_i2p_settings, build_tracker_proxy_rules
+from flux.core.settings import (
+    Settings,
+    build_i2p_settings,
+    build_tracker_proxy_rules,
+    build_label_automation_rules,
+)
+from flux.core.automation import ensure_move_path, label_rule_for, parse_label_rules
 from flux.core.peer_filter import PeerFilter
 from flux.core.script_hooks import ScriptHookRunner
 from flux.core.tracker_proxy import TrackerProxyManager
@@ -95,6 +101,7 @@ class SessionWorker(QObject):
         self._resume_db: Optional[sqlite3.Connection] = None
         self._ip_filter: Optional[lt.ip_filter] = None
         self._tracker_proxy_manager = TrackerProxyManager()
+        self._label_rules = ()
 
         self._session_dl_history: list = []
         self._session_ul_history: list = []
@@ -174,6 +181,7 @@ class SessionWorker(QObject):
         self._ip_filter = self._session.get_ip_filter()
         self._peer_filter.configure(self._cfg)
         self._tracker_proxy_manager.configure(build_tracker_proxy_rules(self._cfg))
+        self._label_rules = parse_label_rules(build_label_automation_rules(self._cfg))
 
         self._init_resume_db()
         self._load_ip_blocklist()
@@ -260,6 +268,7 @@ class SessionWorker(QObject):
             if info_hash not in self._torrents:
                 torrent = Torrent(handle, category=category, tags=tags)
                 self._torrents[info_hash] = torrent
+                self._apply_label_rule(torrent)
                 self._tracker_proxy_manager.sync_torrent(torrent)
                 self.torrent_added.emit(info_hash)
                 self._fire_hook("on_add", torrent)
@@ -301,6 +310,7 @@ class SessionWorker(QObject):
 
             torrent = Torrent(handle, category=category, tags=tags)
             self._torrents[info_hash] = torrent
+            self._apply_label_rule(torrent)
             self._tracker_proxy_manager.sync_torrent(torrent)
             self.torrent_added.emit(info_hash)
             self._fire_hook("on_add", torrent)
@@ -340,6 +350,7 @@ class SessionWorker(QObject):
             if info_hash not in self._torrents:
                 torrent = Torrent(handle, category=category, tags=tags)
                 self._torrents[info_hash] = torrent
+                self._apply_label_rule(torrent)
                 self._tracker_proxy_manager.sync_torrent(torrent)
                 self.torrent_added.emit(info_hash)
                 self._fire_hook("on_add", torrent)
@@ -466,6 +477,7 @@ class SessionWorker(QObject):
         t = self._torrents.get(info_hash)
         if t:
             t.add_tracker(url)
+            self._apply_label_rule(t)
             self._tracker_proxy_manager.sync_torrent(t)
 
     @pyqtSlot(str, str)
@@ -508,6 +520,7 @@ class SessionWorker(QObject):
         if cfg is not None:
             self._cfg = cfg
             self._tracker_proxy_manager.configure(build_tracker_proxy_rules(self._cfg))
+            self._label_rules = parse_label_rules(build_label_automation_rules(self._cfg))
         if not self._session:
             return
         settings = {}
@@ -525,9 +538,40 @@ class SessionWorker(QObject):
         self._hook_runner.configure(self._cfg.get("script_hooks", []))
         self._load_ip_blocklist()
         for torrent in self._torrents.values():
+            self._apply_label_rule(torrent)
             self._tracker_proxy_manager.sync_torrent(torrent)
 
     # --- Internal: Script hooks ---
+
+    def _label_rule(self, torrent: Torrent):
+        return label_rule_for(torrent.category, torrent.tags, self._label_rules)
+
+    def _apply_label_rule(self, torrent: Torrent):
+        """Apply label-scoped upload and tracker overrides to a torrent."""
+        rule = self._label_rule(torrent)
+        if rule is None:
+            return
+        if rule.upload_limit > 0:
+            torrent.set_upload_limit(rule.upload_limit)
+        if rule.tracker_overrides:
+            torrent.replace_trackers(list(rule.tracker_overrides))
+
+    def _apply_label_completion(self, torrent: Torrent):
+        rule = self._label_rule(torrent)
+        if rule is None or not rule.move_completed_path:
+            return
+        destination = ensure_move_path(rule.move_completed_path)
+        if destination:
+            torrent.move_storage(destination)
+
+    def _enforce_label_ratio(self, torrent: Torrent, snap):
+        rule = self._label_rule(torrent)
+        if rule is None or rule.ratio_limit <= 0 or snap.ratio < rule.ratio_limit:
+            return
+        state_name = getattr(snap.state, "name", "")
+        if state_name not in {"PAUSED", "QUEUED"}:
+            torrent.pause()
+            logger.info("Label ratio limit reached for %s: %.3f", snap.info_hash, snap.ratio)
 
     def _fire_hook(self, event: str, torrent: Torrent, error: str = ""):
         """Build torrent info dict and fire script hooks."""
@@ -627,6 +671,7 @@ class SessionWorker(QObject):
                 torrent.added_time = added_time or time.time()
                 info_hash, _, _ = get_info_hashes(handle)
                 self._torrents[info_hash] = torrent
+                self._apply_label_rule(torrent)
                 self._tracker_proxy_manager.sync_torrent(torrent)
                 count += 1
             except Exception as e:
@@ -765,6 +810,7 @@ class SessionWorker(QObject):
         torrent = self._torrents.get(info_hash)
         if not torrent:
             return
+        self._apply_label_completion(torrent)
         self._fire_hook("on_finish", torrent)
         on_complete = self._cfg.get("on_complete_action", 1)
         if on_complete == 1:
@@ -833,6 +879,7 @@ class SessionWorker(QObject):
             try:
                 snap = torrent.snapshot()
                 torrent.record_speed()
+                self._enforce_label_ratio(torrent, snap)
                 snapshots.append(snap)
             except Exception:
                 pass
