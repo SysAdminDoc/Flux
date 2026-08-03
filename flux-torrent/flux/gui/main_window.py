@@ -10,8 +10,8 @@ import json
 import shutil
 import logging
 
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QKeySequence, QFont, QColor, QDragEnterEvent, QDropEvent, QPalette
+from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtGui import QFont, QColor, QDragEnterEvent, QDropEvent, QPalette
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QToolBar, QToolButton, QSplitter, QTableView, QHeaderView,
@@ -24,6 +24,7 @@ from PyQt6.QtWidgets import (
 from flux.core.session_worker import ThreadedSession, SessionStats, DetailData
 from flux.core.settings import Settings
 from flux.core.torrent import TorrentState
+from flux.core.remote import RemoteControlServer
 from flux.gui.torrent_model import TorrentListModel, TorrentSortFilterProxy
 from flux.gui.widgets.delegates import ProgressBarDelegate, StateIconDelegate
 from flux.gui.widgets.sidebar import SidebarWidget
@@ -82,6 +83,13 @@ class SpeedLimitDialog(QDialog):
 class MainWindow(QMainWindow):
     """Flux Torrent Client main window."""
 
+    remote_add_magnet_requested = pyqtSignal(str, str, str, str, bool)
+    remote_pause_torrent_requested = pyqtSignal(str)
+    remote_resume_torrent_requested = pyqtSignal(str)
+    remote_remove_torrent_requested = pyqtSignal(str, bool)
+    remote_pause_all_requested = pyqtSignal()
+    remote_resume_all_requested = pyqtSignal()
+
     def __init__(self):
         super().__init__()
 
@@ -89,6 +97,7 @@ class MainWindow(QMainWindow):
         self._selected_info_hash: str | None = None
         self._tray: QSystemTrayIcon | None = None
         self._last_stats: SessionStats | None = None
+        self._remote_server: RemoteControlServer | None = None
         self._rss_monitor = None
 
         self.setWindowTitle("Flux Torrent")
@@ -110,6 +119,7 @@ class MainWindow(QMainWindow):
         self._threaded.start()
 
         self._sidebar.update_categories(self._settings.get_categories())
+        self._sync_remote_server()
 
     # ------------------------------------------------------------------ #
     #  Menu Bar
@@ -122,31 +132,25 @@ class MainWindow(QMainWindow):
         file_menu = menubar.addMenu("&File")
 
         add_torrent = file_menu.addAction("&Add Torrent File...")
-        add_torrent.setShortcut(QKeySequence("Ctrl+O"))
         add_torrent.triggered.connect(self._on_add_torrent)
 
         add_magnet = file_menu.addAction("Add &Magnet Link...")
-        add_magnet.setShortcut(QKeySequence("Ctrl+M"))
         add_magnet.triggered.connect(self._on_add_magnet)
 
         create_torrent = file_menu.addAction("&Create Torrent...")
-        create_torrent.setShortcut(QKeySequence("Ctrl+N"))
         create_torrent.triggered.connect(self._on_create_torrent)
 
         file_menu.addSeparator()
 
         pause_all = file_menu.addAction("Pause &All")
-        pause_all.setShortcut(QKeySequence("Ctrl+Shift+P"))
         pause_all.triggered.connect(lambda: self._worker.pause_all())
 
         resume_all = file_menu.addAction("&Resume All")
-        resume_all.setShortcut(QKeySequence("Ctrl+Shift+R"))
         resume_all.triggered.connect(lambda: self._worker.resume_all())
 
         file_menu.addSeparator()
 
         exit_action = file_menu.addAction("E&xit")
-        exit_action.setShortcut(QKeySequence("Ctrl+Q"))
         exit_action.triggered.connect(self._force_quit)
 
         # --- View ---
@@ -174,7 +178,6 @@ class MainWindow(QMainWindow):
         tools_menu = menubar.addMenu("&Tools")
 
         settings_action = tools_menu.addAction("&Settings...")
-        settings_action.setShortcut(QKeySequence("Ctrl+,"))
         settings_action.triggered.connect(self._on_open_settings)
 
         tools_menu.addSeparator()
@@ -504,6 +507,14 @@ class MainWindow(QMainWindow):
         w.peer_banned.connect(self._on_peer_banned)
         w.magnet_uri_ready.connect(self._on_magnet_uri_ready)
 
+        # Remote API -> worker
+        self.remote_add_magnet_requested.connect(w.add_magnet)
+        self.remote_pause_torrent_requested.connect(w.pause_torrent)
+        self.remote_resume_torrent_requested.connect(w.resume_torrent)
+        self.remote_remove_torrent_requested.connect(w.remove_torrent)
+        self.remote_pause_all_requested.connect(w.pause_all)
+        self.remote_resume_all_requested.connect(w.resume_all)
+
         # Detail panel mutation callbacks -> worker slots
         self._detail_panel.on_set_file_priority = w.set_file_priority
         self._detail_panel.on_add_tracker = w.add_tracker
@@ -555,7 +566,73 @@ class MainWindow(QMainWindow):
     def _on_settings_changed(self):
         self._worker.apply_settings(self._settings.get_all())
         self._sidebar.update_categories(self._settings.get_categories())
+        self._sync_remote_server()
         self._status_label.setText("Settings applied")
+
+    def _sync_remote_server(self):
+        cfg = self._settings.get_all()
+        enabled = bool(cfg.get("remote_enabled", False))
+
+        if self._remote_server:
+            self._remote_server.stop()
+            self._remote_server = None
+
+        if not enabled:
+            return
+
+        try:
+            server = RemoteControlServer.from_settings(cfg, self)
+            server.start()
+            self._remote_server = server
+            self._status_label.setText(f"Remote UI: {server.url}")
+        except Exception as exc:
+            logger.error("Failed to start remote Web UI: %s", exc)
+            self._status_label.setText(f"Remote UI error: {exc}")
+
+    # ------------------------------------------------------------------ #
+    #  Remote API Controller
+    # ------------------------------------------------------------------ #
+
+    def get_remote_stats(self) -> SessionStats:
+        return self._last_stats or SessionStats()
+
+    def get_remote_settings(self) -> dict:
+        return self._settings.get_all()
+
+    def add_magnet(self, uri: str, save_path: str = "", category: str = "",
+                   tags: list | None = None, paused: bool = False) -> bool:
+        if not uri.startswith("magnet:"):
+            return False
+        self.remote_add_magnet_requested.emit(
+            uri, save_path, category, json.dumps(tags or []), bool(paused)
+        )
+        return True
+
+    def add_torrent_url(self, url: str, save_path: str = "", category: str = "",
+                        tags: list | None = None, paused: bool = False) -> bool:
+        if url.startswith("magnet:"):
+            return self.add_magnet(url, save_path, category, tags, paused)
+        return False
+
+    def pause_torrent(self, info_hash: str) -> bool:
+        self.remote_pause_torrent_requested.emit(info_hash)
+        return True
+
+    def resume_torrent(self, info_hash: str) -> bool:
+        self.remote_resume_torrent_requested.emit(info_hash)
+        return True
+
+    def remove_torrent(self, info_hash: str, delete_files: bool = False) -> bool:
+        self.remote_remove_torrent_requested.emit(info_hash, bool(delete_files))
+        return True
+
+    def pause_all(self) -> bool:
+        self.remote_pause_all_requested.emit()
+        return True
+
+    def resume_all(self) -> bool:
+        self.remote_resume_all_requested.emit()
+        return True
 
     def _on_theme_changed(self, theme_key: str):
         set_theme(theme_key)

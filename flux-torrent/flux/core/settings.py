@@ -76,6 +76,17 @@ class Settings:
         "show_speed_in_title": True,
         # Script hooks
         "script_hooks": [],
+        # Remote Web UI / API
+        "remote_enabled": False,
+        "remote_host": "127.0.0.1",
+        "remote_port": 8090,
+        "remote_username": "admin",
+        "remote_password": "",
+        "remote_token": "",
+        "remote_tls_certfile": "",
+        "remote_tls_keyfile": "",
+        "remote_tls_ca_file": "",
+        "remote_require_client_cert": False,
         # Webhook notifications
         "webhook_enabled": False,
         "webhook_url": "",

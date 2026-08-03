@@ -40,6 +40,7 @@ class SettingsDialog(QDialog):
         self._tabs.addTab(self._build_bandwidth_tab(), "Bandwidth")
         self._tabs.addTab(self._build_connection_tab(), "Connection")
         self._tabs.addTab(self._build_behavior_tab(), "Behavior")
+        self._tabs.addTab(self._build_remote_tab(), "Remote")
         self._tabs.addTab(self._build_ui_tab(), "Interface")
 
         # Bottom buttons
@@ -403,6 +404,92 @@ class SettingsDialog(QDialog):
         layout.addStretch()
         return page
 
+    # --- Remote Tab ---
+
+    def _build_remote_tab(self) -> QWidget:
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(20, 16, 20, 16)
+        layout.setSpacing(12)
+
+        web_group = QGroupBox("Web UI / API")
+        wg = QGridLayout(web_group)
+        wg.setSpacing(8)
+
+        enabled = QCheckBox("Enable remote Web UI")
+        self._widgets["remote_enabled"] = enabled
+        wg.addWidget(enabled, 0, 0, 1, 3)
+
+        wg.addWidget(QLabel("Bind address:"), 1, 0)
+        host = QLineEdit()
+        host.setPlaceholderText("127.0.0.1")
+        self._widgets["remote_host"] = host
+        wg.addWidget(host, 1, 1, 1, 2)
+
+        wg.addWidget(QLabel("Port:"), 2, 0)
+        port = QSpinBox()
+        port.setRange(1, 65535)
+        self._widgets["remote_port"] = port
+        wg.addWidget(port, 2, 1)
+
+        wg.addWidget(QLabel("Username:"), 3, 0)
+        username = QLineEdit()
+        self._widgets["remote_username"] = username
+        wg.addWidget(username, 3, 1, 1, 2)
+
+        wg.addWidget(QLabel("Password:"), 4, 0)
+        password = QLineEdit()
+        password.setEchoMode(QLineEdit.EchoMode.Password)
+        self._widgets["remote_password"] = password
+        wg.addWidget(password, 4, 1, 1, 2)
+
+        wg.addWidget(QLabel("Bearer token:"), 5, 0)
+        token = QLineEdit()
+        token.setEchoMode(QLineEdit.EchoMode.Password)
+        self._widgets["remote_token"] = token
+        wg.addWidget(token, 5, 1, 1, 2)
+
+        layout.addWidget(web_group)
+
+        tls_group = QGroupBox("TLS / mTLS")
+        tg = QGridLayout(tls_group)
+        tg.setSpacing(8)
+
+        cert = QLineEdit()
+        self._widgets["remote_tls_certfile"] = cert
+        tg.addWidget(QLabel("Certificate:"), 0, 0)
+        tg.addWidget(cert, 0, 1)
+        cert_btn = QPushButton("Browse...")
+        cert_btn.setFixedWidth(80)
+        cert_btn.clicked.connect(lambda: self._browse_file_path(cert))
+        tg.addWidget(cert_btn, 0, 2)
+
+        key = QLineEdit()
+        self._widgets["remote_tls_keyfile"] = key
+        tg.addWidget(QLabel("Private key:"), 1, 0)
+        tg.addWidget(key, 1, 1)
+        key_btn = QPushButton("Browse...")
+        key_btn.setFixedWidth(80)
+        key_btn.clicked.connect(lambda: self._browse_file_path(key))
+        tg.addWidget(key_btn, 1, 2)
+
+        ca = QLineEdit()
+        self._widgets["remote_tls_ca_file"] = ca
+        tg.addWidget(QLabel("Client CA:"), 2, 0)
+        tg.addWidget(ca, 2, 1)
+        ca_btn = QPushButton("Browse...")
+        ca_btn.setFixedWidth(80)
+        ca_btn.clicked.connect(lambda: self._browse_file_path(ca))
+        tg.addWidget(ca_btn, 2, 2)
+
+        require_client = QCheckBox("Require client certificate")
+        self._widgets["remote_require_client_cert"] = require_client
+        tg.addWidget(require_client, 3, 0, 1, 3)
+
+        layout.addWidget(tls_group)
+        layout.addStretch()
+        return page
+
     # --- Interface Tab ---
 
     def _build_ui_tab(self) -> QWidget:
@@ -497,6 +584,20 @@ class SettingsDialog(QDialog):
         self._widgets["auto_update_trackers"].setChecked(s.get("auto_update_trackers", False))
         self._widgets["tracker_list_url"].setText(s.get("tracker_list_url", ""))
 
+        # Remote
+        self._widgets["remote_enabled"].setChecked(s.get("remote_enabled", False))
+        self._widgets["remote_host"].setText(s.get("remote_host", "127.0.0.1"))
+        self._widgets["remote_port"].setValue(s.get("remote_port", 8090))
+        self._widgets["remote_username"].setText(s.get("remote_username", "admin"))
+        self._widgets["remote_password"].setText(s.get("remote_password", ""))
+        self._widgets["remote_token"].setText(s.get("remote_token", ""))
+        self._widgets["remote_tls_certfile"].setText(s.get("remote_tls_certfile", ""))
+        self._widgets["remote_tls_keyfile"].setText(s.get("remote_tls_keyfile", ""))
+        self._widgets["remote_tls_ca_file"].setText(s.get("remote_tls_ca_file", ""))
+        self._widgets["remote_require_client_cert"].setChecked(
+            s.get("remote_require_client_cert", False)
+        )
+
         # UI
         theme_key = s.get("theme", "dark")
         combo = self._widgets["theme"]
@@ -559,6 +660,18 @@ class SettingsDialog(QDialog):
         s.set("auto_update_trackers", self._widgets["auto_update_trackers"].isChecked())
         s.set("tracker_list_url", self._widgets["tracker_list_url"].text())
 
+        # Remote
+        s.set("remote_enabled", self._widgets["remote_enabled"].isChecked())
+        s.set("remote_host", self._widgets["remote_host"].text().strip() or "127.0.0.1")
+        s.set("remote_port", self._widgets["remote_port"].value())
+        s.set("remote_username", self._widgets["remote_username"].text().strip() or "admin")
+        s.set("remote_password", self._widgets["remote_password"].text())
+        s.set("remote_token", self._widgets["remote_token"].text())
+        s.set("remote_tls_certfile", self._widgets["remote_tls_certfile"].text().strip())
+        s.set("remote_tls_keyfile", self._widgets["remote_tls_keyfile"].text().strip())
+        s.set("remote_tls_ca_file", self._widgets["remote_tls_ca_file"].text().strip())
+        s.set("remote_require_client_cert", self._widgets["remote_require_client_cert"].isChecked())
+
         # UI
         new_theme = self._widgets["theme"].currentData()
         old_theme = s.get("theme", "dark")
@@ -578,5 +691,10 @@ class SettingsDialog(QDialog):
 
     def _browse_folder(self, line_edit: QLineEdit):
         path = QFileDialog.getExistingDirectory(self, "Select Folder", line_edit.text())
+        if path:
+            line_edit.setText(path)
+
+    def _browse_file_path(self, line_edit: QLineEdit):
+        path, _ = QFileDialog.getOpenFileName(self, "Select File", line_edit.text())
         if path:
             line_edit.setText(path)
