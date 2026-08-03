@@ -1,7 +1,12 @@
 """Tests for session worker data structures."""
 
 import unittest
-from flux.core.session_worker import SessionStats, DetailData
+from flux.core.session_worker import (
+    SessionStats,
+    DetailData,
+    _apply_private_tracker_profile,
+    _PRIVATE_TRACKER_FLAGS,
+)
 
 
 class TestSessionStats(unittest.TestCase):
@@ -63,6 +68,47 @@ class TestDetailData(unittest.TestCase):
         d2 = DetailData()
         d1.files.append("test")
         self.assertEqual(len(d2.files), 0)
+
+
+class _FakeHandle:
+    def __init__(self):
+        self.set_flags_calls = []
+        self.unset_flags_calls = []
+        self.max_uploads = None
+
+    def set_flags(self, flags):
+        self.set_flags_calls.append(flags)
+
+    def unset_flags(self, flags):
+        self.unset_flags_calls.append(flags)
+
+    def set_max_uploads(self, value):
+        self.max_uploads = value
+
+
+class _FakeTorrent:
+    def __init__(self):
+        self.handle = _FakeHandle()
+
+
+class TestPrivateTrackerProfile(unittest.TestCase):
+    def test_profile_sets_privacy_flags_and_slot_cap(self):
+        torrent = _FakeTorrent()
+        _apply_private_tracker_profile(torrent, {
+            "private_tracker_profile": True,
+            "private_tracker_unchoke_slots": 3,
+        })
+        self.assertEqual(torrent.handle.set_flags_calls, [_PRIVATE_TRACKER_FLAGS])
+        self.assertEqual(torrent.handle.max_uploads, 3)
+
+    def test_profile_disable_restores_normal_flags(self):
+        torrent = _FakeTorrent()
+        _apply_private_tracker_profile(torrent, {
+            "private_tracker_profile": False,
+            "max_uploads_per_torrent": 7,
+        })
+        self.assertEqual(torrent.handle.unset_flags_calls, [_PRIVATE_TRACKER_FLAGS])
+        self.assertEqual(torrent.handle.max_uploads, 7)
 
 
 if __name__ == "__main__":

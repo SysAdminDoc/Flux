@@ -29,6 +29,9 @@ class Settings:
         "proxy_pass": "",
         "tracker_proxy_rules": [],
         "label_rules": [],
+        # Private-tracker profile
+        "private_tracker_profile": False,
+        "private_tracker_unchoke_slots": 4,
         # I2P SAM bridge
         "i2p_enabled": False,
         "i2p_hostname": "127.0.0.1",
@@ -243,3 +246,19 @@ def build_label_automation_rules(values: dict[str, Any]) -> list[dict[str, Any]]
 def build_torrent_schedule_settings(values: dict[str, Any]) -> dict[str, dict[str, Any]]:
     """Return validated per-torrent schedule settings."""
     return build_torrent_schedules(values)
+
+
+def build_private_tracker_settings(values: dict[str, Any]) -> dict[str, Any]:
+    """Build conservative session settings for private-tracker seeding."""
+    if not bool(values.get("private_tracker_profile", False)):
+        return {}
+    try:
+        slots = int(values.get("private_tracker_unchoke_slots", 4))
+    except (TypeError, ValueError):
+        slots = 4
+    slots = max(1, min(slots, 500))
+    return {
+        "enable_dht": False,
+        "enable_lsd": False,
+        "unchoke_slots_limit": slots,
+    }

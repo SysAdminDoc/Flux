@@ -24,7 +24,7 @@ import libtorrent as lt
 from PyQt6.QtCore import QObject, QTimer, pyqtSignal
 
 from flux.core.torrent import Torrent, get_info_hashes
-from flux.core.settings import Settings, build_i2p_settings
+from flux.core.settings import Settings, build_i2p_settings, build_private_tracker_settings
 from flux.core.peer_filter import PeerFilter
 
 logger = logging.getLogger(__name__)
@@ -34,9 +34,30 @@ _tf = getattr(lt, 'torrent_flags', None) or getattr(lt, 'torrent_flags_t', None)
 _FLAG_PAUSED = getattr(_tf, 'paused', 0x20) if _tf else 0x20
 _FLAG_AUTO_MANAGED = getattr(_tf, 'auto_managed', 0x40) if _tf else 0x40
 _FLAG_SEQUENTIAL = getattr(_tf, 'sequential_download', 0x200) if _tf else 0x200
+_FLAG_DISABLE_DHT = getattr(_tf, 'disable_dht', 0) if _tf else 0
+_FLAG_DISABLE_PEX = getattr(_tf, 'disable_pex', 0) if _tf else 0
+_FLAG_DISABLE_LSD = getattr(_tf, 'disable_lsd', 0) if _tf else 0
+_PRIVATE_TRACKER_FLAGS = _FLAG_DISABLE_DHT | _FLAG_DISABLE_PEX | _FLAG_DISABLE_LSD
 
 # Current DB schema version
 _SCHEMA_VERSION = 2
+
+
+def _apply_private_tracker_profile(torrent: Torrent, settings: Settings):
+    """Apply private-tracker flags to a legacy-session torrent."""
+    enabled = bool(settings.get("private_tracker_profile", False))
+    try:
+        if enabled and _PRIVATE_TRACKER_FLAGS:
+            torrent.handle.set_flags(_PRIVATE_TRACKER_FLAGS)
+        elif not enabled and _PRIVATE_TRACKER_FLAGS:
+            torrent.handle.unset_flags(_PRIVATE_TRACKER_FLAGS)
+        profile = build_private_tracker_settings(settings.get_all())
+        if "unchoke_slots_limit" in profile:
+            torrent.handle.set_max_uploads(profile["unchoke_slots_limit"])
+        else:
+            torrent.handle.set_max_uploads(max(1, int(settings.get("max_uploads_per_torrent", 5) or 5)))
+    except (TypeError, ValueError, RuntimeError):
+        pass
 
 
 class TorrentSession(QObject):
@@ -127,6 +148,7 @@ class TorrentSession(QObject):
         if ul_limit > 0:
             settings['upload_rate_limit'] = ul_limit
         settings.update(build_i2p_settings(self._settings.get_all()))
+        settings.update(build_private_tracker_settings(self._settings.get_all()))
 
         # Encryption
         enc = self._settings.get("encryption_mode", 1)
@@ -283,12 +305,15 @@ class TorrentSession(QObject):
             info_hash, data, category, tags_json, added_time = row
             try:
                 atp = lt.read_resume_data(data)
+                if self._settings.get("private_tracker_profile", False) and _PRIVATE_TRACKER_FLAGS:
+                    atp.flags |= _PRIVATE_TRACKER_FLAGS
                 handle = self._session.add_torrent(atp)
                 tags = json.loads(tags_json) if tags_json else []
                 torrent = Torrent(handle, category=category, tags=tags)
                 torrent.added_time = added_time or time.time()
                 info_hash, _, _ = get_info_hashes(handle)
                 self._torrents[info_hash] = torrent
+                _apply_private_tracker_profile(torrent, self._settings)
                 count += 1
             except Exception as e:
                 logger.error(f"Failed to load torrent {info_hash}: {e}")
@@ -414,6 +439,8 @@ class TorrentSession(QObject):
 
             if sequential:
                 atp.flags |= _FLAG_SEQUENTIAL
+            if self._settings.get("private_tracker_profile", False) and _PRIVATE_TRACKER_FLAGS:
+                atp.flags |= _PRIVATE_TRACKER_FLAGS
 
             handle = self._session.add_torrent(atp)
             info_hash, _, _ = get_info_hashes(handle)
@@ -424,6 +451,7 @@ class TorrentSession(QObject):
 
             torrent = Torrent(handle, category=category, tags=tags or [])
             self._torrents[info_hash] = torrent
+            _apply_private_tracker_profile(torrent, self._settings)
 
             self.torrent_added.emit(info_hash)
             logger.info(f"Added torrent: {torrent.name}")
@@ -465,6 +493,8 @@ class TorrentSession(QObject):
                 atp.flags &= ~_FLAG_AUTO_MANAGED
             else:
                 atp.flags |= _FLAG_AUTO_MANAGED
+            if self._settings.get("private_tracker_profile", False) and _PRIVATE_TRACKER_FLAGS:
+                atp.flags |= _PRIVATE_TRACKER_FLAGS
 
             handle = self._session.add_torrent(atp)
             info_hash, _, _ = get_info_hashes(handle)
@@ -475,6 +505,7 @@ class TorrentSession(QObject):
 
             torrent = Torrent(handle, category=category, tags=tags or [])
             self._torrents[info_hash] = torrent
+            _apply_private_tracker_profile(torrent, self._settings)
 
             self.torrent_added.emit(info_hash)
             logger.info(f"Added magnet: {info_hash}")
@@ -796,9 +827,12 @@ class TorrentSession(QObject):
         settings['active_seeds'] = self._settings.get("max_active_uploads", 5)
         settings['active_limit'] = self._settings.get("max_active_torrents", 10)
         settings.update(build_i2p_settings(self._settings.get_all()))
+        settings.update(build_private_tracker_settings(self._settings.get_all()))
 
         self._session.apply_settings(settings)
         self._peer_filter.configure(self._settings.get_all())
+        for torrent in self._torrents.values():
+            _apply_private_tracker_profile(torrent, self._settings)
 
         # Reload blocklist if path changed
         self._load_ip_blocklist()

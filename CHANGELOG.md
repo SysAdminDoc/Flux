@@ -22,6 +22,8 @@ All notable changes to Flux will be documented in this file.
   feed definitions, and optional asynchronous TMDB/TVDB lookup.
 - Added a background Cross-seed Helper with info-hash, piece-hash, piece-size, and optional library
   verification matching.
+- Added a private-tracker profile that disables DHT/PEX/LSD and applies a bounded unchoke-slot cap
+  to existing and newly added torrents.
 
 ## [v0.1.0] - %Y->- (HEAD -> main, origin/main, origin/HEAD)
 

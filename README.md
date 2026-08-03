@@ -59,6 +59,7 @@ A clean, fast, privacy-focused BitTorrent client built with Python, PyQt6, and l
   rules, plus optional TMDB/TVDB title lookup
 - **Cross-seed helper** - scan torrent metadata, compare info hashes/piece hashes, and verify
   candidates against a downloaded library before reusing content
+- **Private-tracker profile** - disable DHT/PEX/LSD and cap unchoke slots with one setting
 
 ## Requirements
 
@@ -105,6 +106,8 @@ the RSS worker and stores the chosen show identity in the rule.
 Tools > Cross-seed Helper scans a metadata folder in the background. Exact info-hash and piece-hash
 matches are high-confidence; file-list/piece-size matches are shown as lower-confidence candidates.
 Optionally select the downloaded library to verify v1 piece hashes before acting on a candidate.
+The private-tracker profile is configured in Settings > Connection. Enabling it disables DHT, PEX,
+and LSD for existing and newly added torrents and applies the selected session-wide unchoke cap.
 
 ## Usage
 

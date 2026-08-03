@@ -26,6 +26,7 @@ from flux.core.torrent import Torrent, get_info_hashes
 from flux.core.settings import (
     Settings,
     build_i2p_settings,
+    build_private_tracker_settings,
     build_tracker_proxy_rules,
     build_label_automation_rules,
     build_torrent_schedule_settings,
@@ -48,8 +49,33 @@ _tf = getattr(lt, 'torrent_flags', None) or getattr(lt, 'torrent_flags_t', None)
 _FLAG_PAUSED = getattr(_tf, 'paused', 0x20) if _tf else 0x20
 _FLAG_AUTO_MANAGED = getattr(_tf, 'auto_managed', 0x40) if _tf else 0x40
 _FLAG_SEQUENTIAL = getattr(_tf, 'sequential_download', 0x200) if _tf else 0x200
+_FLAG_DISABLE_DHT = getattr(_tf, 'disable_dht', 0) if _tf else 0
+_FLAG_DISABLE_PEX = getattr(_tf, 'disable_pex', 0) if _tf else 0
+_FLAG_DISABLE_LSD = getattr(_tf, 'disable_lsd', 0) if _tf else 0
+_PRIVATE_TRACKER_FLAGS = _FLAG_DISABLE_DHT | _FLAG_DISABLE_PEX | _FLAG_DISABLE_LSD
 
 _SCHEMA_VERSION = 2
+
+
+def _apply_private_tracker_profile(torrent: Torrent, cfg: dict):
+    """Apply per-torrent privacy flags and the configured upload-slot cap."""
+    enabled = bool(cfg.get("private_tracker_profile", False))
+    try:
+        if enabled and _PRIVATE_TRACKER_FLAGS:
+            torrent.handle.set_flags(_PRIVATE_TRACKER_FLAGS)
+        elif not enabled and _PRIVATE_TRACKER_FLAGS:
+            torrent.handle.unset_flags(_PRIVATE_TRACKER_FLAGS)
+        settings = build_private_tracker_settings(cfg)
+        if "unchoke_slots_limit" in settings:
+            max_uploads = settings["unchoke_slots_limit"]
+        else:
+            try:
+                max_uploads = max(1, int(cfg.get("max_uploads_per_torrent", 5) or 5))
+            except (TypeError, ValueError):
+                max_uploads = 5
+        torrent.handle.set_max_uploads(max_uploads)
+    except Exception as exc:
+        logger.debug("Failed to apply private-tracker profile: %s", exc)
 
 
 @dataclass
@@ -166,6 +192,7 @@ class SessionWorker(QObject):
         if ul_limit > 0:
             settings['upload_rate_limit'] = ul_limit
         settings.update(build_i2p_settings(self._cfg))
+        settings.update(build_private_tracker_settings(self._cfg))
 
         enc = self._cfg.get("encryption_mode", 1)
         try:
@@ -273,6 +300,8 @@ class SessionWorker(QObject):
                 atp.flags |= _FLAG_AUTO_MANAGED
             if sequential:
                 atp.flags |= _FLAG_SEQUENTIAL
+            if self._cfg.get("private_tracker_profile", False) and _PRIVATE_TRACKER_FLAGS:
+                atp.flags |= _PRIVATE_TRACKER_FLAGS
 
             handle = self._session.add_torrent(atp)
             info_hash, _, _ = get_info_hashes(handle)
@@ -280,6 +309,7 @@ class SessionWorker(QObject):
             if info_hash not in self._torrents:
                 torrent = Torrent(handle, category=category, tags=tags)
                 self._torrents[info_hash] = torrent
+                _apply_private_tracker_profile(torrent, self._cfg)
                 self._apply_label_rule(torrent)
                 self._tracker_proxy_manager.sync_torrent(torrent)
                 self.torrent_added.emit(info_hash)
@@ -313,6 +343,8 @@ class SessionWorker(QObject):
                 atp.flags |= _FLAG_AUTO_MANAGED
             if sequential:
                 atp.flags |= _FLAG_SEQUENTIAL
+            if self._cfg.get("private_tracker_profile", False) and _PRIVATE_TRACKER_FLAGS:
+                atp.flags |= _PRIVATE_TRACKER_FLAGS
 
             handle = self._session.add_torrent(atp)
             info_hash, _, _ = get_info_hashes(handle)
@@ -322,6 +354,7 @@ class SessionWorker(QObject):
 
             torrent = Torrent(handle, category=category, tags=tags)
             self._torrents[info_hash] = torrent
+            _apply_private_tracker_profile(torrent, self._cfg)
             self._apply_label_rule(torrent)
             self._tracker_proxy_manager.sync_torrent(torrent)
             self.torrent_added.emit(info_hash)
@@ -355,6 +388,8 @@ class SessionWorker(QObject):
                 atp.flags &= ~_FLAG_AUTO_MANAGED
             else:
                 atp.flags |= _FLAG_AUTO_MANAGED
+            if self._cfg.get("private_tracker_profile", False) and _PRIVATE_TRACKER_FLAGS:
+                atp.flags |= _PRIVATE_TRACKER_FLAGS
 
             handle = self._session.add_torrent(atp)
             info_hash, _, _ = get_info_hashes(handle)
@@ -362,6 +397,7 @@ class SessionWorker(QObject):
             if info_hash not in self._torrents:
                 torrent = Torrent(handle, category=category, tags=tags)
                 self._torrents[info_hash] = torrent
+                _apply_private_tracker_profile(torrent, self._cfg)
                 self._apply_label_rule(torrent)
                 self._tracker_proxy_manager.sync_torrent(torrent)
                 self.torrent_added.emit(info_hash)
@@ -548,11 +584,13 @@ class SessionWorker(QObject):
         settings['active_seeds'] = self._cfg.get("max_active_uploads", 5)
         settings['active_limit'] = self._cfg.get("max_active_torrents", 10)
         settings.update(build_i2p_settings(self._cfg))
+        settings.update(build_private_tracker_settings(self._cfg))
         self._session.apply_settings(settings)
         self._peer_filter.configure(self._cfg)
         self._hook_runner.configure(self._cfg.get("script_hooks", []))
         self._load_ip_blocklist()
         for torrent in self._torrents.values():
+            _apply_private_tracker_profile(torrent, self._cfg)
             self._apply_label_rule(torrent)
             self._tracker_proxy_manager.sync_torrent(torrent)
 
@@ -680,12 +718,15 @@ class SessionWorker(QObject):
             info_hash, data, category, tags_json, added_time = row
             try:
                 atp = lt.read_resume_data(data)
+                if self._cfg.get("private_tracker_profile", False) and _PRIVATE_TRACKER_FLAGS:
+                    atp.flags |= _PRIVATE_TRACKER_FLAGS
                 handle = self._session.add_torrent(atp)
                 tags = json.loads(tags_json) if tags_json else []
                 torrent = Torrent(handle, category=category, tags=tags)
                 torrent.added_time = added_time or time.time()
                 info_hash, _, _ = get_info_hashes(handle)
                 self._torrents[info_hash] = torrent
+                _apply_private_tracker_profile(torrent, self._cfg)
                 self._apply_label_rule(torrent)
                 self._tracker_proxy_manager.sync_torrent(torrent)
                 count += 1

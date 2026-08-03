@@ -5,7 +5,12 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 import unittest
 import tempfile
-from flux.core.settings import Settings, build_i2p_settings, build_tracker_proxy_rules
+from flux.core.settings import (
+    Settings,
+    build_i2p_settings,
+    build_private_tracker_settings,
+    build_tracker_proxy_rules,
+)
 
 
 class TestSettings(unittest.TestCase):
@@ -50,6 +55,27 @@ class TestSettings(unittest.TestCase):
             "tracker_url": "https://tracker.example/announce",
             "proxy_url": "socks5://127.0.0.1:1080",
         }])
+
+    def test_private_tracker_profile_settings(self):
+        self.assertEqual(build_private_tracker_settings({}), {})
+        self.assertEqual(
+            build_private_tracker_settings({
+                "private_tracker_profile": True,
+                "private_tracker_unchoke_slots": 3,
+            }),
+            {
+                "enable_dht": False,
+                "enable_lsd": False,
+                "unchoke_slots_limit": 3,
+            },
+        )
+        self.assertEqual(
+            build_private_tracker_settings({
+                "private_tracker_profile": True,
+                "private_tracker_unchoke_slots": "bad",
+            })["unchoke_slots_limit"],
+            4,
+        )
 
     def test_set_get(self):
         self.settings.set("listen_port", 12345)

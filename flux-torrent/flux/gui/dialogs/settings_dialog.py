@@ -339,6 +339,22 @@ class SettingsDialog(QDialog):
         tracker_proxy_layout.addWidget(tracker_proxy_rules)
         layout.addWidget(tracker_proxy_group)
 
+        private_group = QGroupBox("Private-tracker profile")
+        private_layout = QGridLayout(private_group)
+        private_layout.setSpacing(8)
+        private_enabled = QCheckBox(
+            "Disable DHT, PEX, and LSD for torrents and cap unchoke slots"
+        )
+        self._widgets["private_tracker_profile"] = private_enabled
+        private_layout.addWidget(private_enabled, 0, 0, 1, 3)
+        private_layout.addWidget(QLabel("Unchoke slots cap:"), 1, 0)
+        private_slots = QSpinBox()
+        private_slots.setRange(1, 500)
+        self._widgets["private_tracker_unchoke_slots"] = private_slots
+        private_layout.addWidget(private_slots, 1, 1)
+        private_layout.addWidget(QLabel("Applied to the session and existing torrents."), 1, 2)
+        layout.addWidget(private_group)
+
         # Protocol
         proto_group = QGroupBox("Protocol")
         prg = QVBoxLayout(proto_group)
@@ -391,7 +407,11 @@ class SettingsDialog(QDialog):
         layout.addWidget(peer_group)
 
         layout.addStretch()
-        return page
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setWidget(page)
+        return scroll
 
     # --- Behavior Tab ---
 
@@ -746,6 +766,12 @@ class SettingsDialog(QDialog):
             f"{item.get('proxy_url', item.get('proxy', ''))}"
             for item in rules if isinstance(item, dict)
         ))
+        self._widgets["private_tracker_profile"].setChecked(
+            s.get("private_tracker_profile", False)
+        )
+        self._widgets["private_tracker_unchoke_slots"].setValue(
+            s.get("private_tracker_unchoke_slots", 4)
+        )
         self._widgets["dht_enabled"].setChecked(s.get("dht_enabled", True))
         self._widgets["pex_enabled"].setChecked(s.get("pex_enabled", True))
         self._widgets["lsd_enabled"].setChecked(s.get("lsd_enabled", True))
@@ -855,6 +881,11 @@ class SettingsDialog(QDialog):
         s.set("tracker_proxy_rules", build_tracker_proxy_rules({
             "tracker_proxy_rules": self._widgets["tracker_proxy_rules"].toPlainText()
         }))
+        s.set("private_tracker_profile", self._widgets["private_tracker_profile"].isChecked())
+        s.set(
+            "private_tracker_unchoke_slots",
+            self._widgets["private_tracker_unchoke_slots"].value(),
+        )
         s.set("dht_enabled", self._widgets["dht_enabled"].isChecked())
         s.set("pex_enabled", self._widgets["pex_enabled"].isChecked())
         s.set("lsd_enabled", self._widgets["lsd_enabled"].isChecked())
