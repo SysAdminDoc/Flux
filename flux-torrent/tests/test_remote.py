@@ -60,6 +60,8 @@ class TestRemoteProtocol(unittest.TestCase):
             state=TorrentState.DOWNLOADING,
             name="Remote test",
             info_hash="abc123",
+            info_hash_v1="abc123",
+            info_hash_v2="def456" * 10 + "def4",
             save_path="C:/Downloads",
             has_metadata=True,
             progress=0.25,
@@ -124,6 +126,7 @@ class TestRemoteProtocol(unittest.TestCase):
         self.assertEqual(stats.torrents[0].name, "Remote test")
         self.assertEqual(stats.torrents[0].state, TorrentState.DOWNLOADING)
         self.assertEqual(stats.torrents[0].tags, ["hd"])
+        self.assertEqual(len(stats.torrents[0].info_hash_v2), 64)
 
         detail = client.fetch_detail("abc123")
         self.assertEqual(detail.info_hash, "abc123")

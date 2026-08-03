@@ -23,7 +23,7 @@ from datetime import datetime
 import libtorrent as lt
 from PyQt6.QtCore import QObject, QTimer, pyqtSignal
 
-from flux.core.torrent import Torrent, TorrentState
+from flux.core.torrent import Torrent, get_info_hashes
 from flux.core.settings import Settings
 from flux.core.peer_filter import PeerFilter
 
@@ -286,7 +286,8 @@ class TorrentSession(QObject):
                 tags = json.loads(tags_json) if tags_json else []
                 torrent = Torrent(handle, category=category, tags=tags)
                 torrent.added_time = added_time or time.time()
-                self._torrents[str(handle.info_hash())] = torrent
+                info_hash, _, _ = get_info_hashes(handle)
+                self._torrents[info_hash] = torrent
                 count += 1
             except Exception as e:
                 logger.error(f"Failed to load torrent {info_hash}: {e}")
@@ -334,7 +335,7 @@ class TorrentSession(QObject):
 
         try:
             handle = alert.handle
-            info_hash = str(handle.info_hash())
+            info_hash, _, _ = get_info_hashes(handle)
             torrent = self._torrents.get(info_hash)
 
             data = lt.write_resume_data_buf(alert.params)
@@ -414,7 +415,7 @@ class TorrentSession(QObject):
                 atp.flags |= _FLAG_SEQUENTIAL
 
             handle = self._session.add_torrent(atp)
-            info_hash = str(handle.info_hash())
+            info_hash, _, _ = get_info_hashes(handle)
 
             if info_hash in self._torrents:
                 logger.warning(f"Torrent already exists: {info_hash}")
@@ -465,7 +466,7 @@ class TorrentSession(QObject):
                 atp.flags |= _FLAG_AUTO_MANAGED
 
             handle = self._session.add_torrent(atp)
-            info_hash = str(handle.info_hash())
+            info_hash, _, _ = get_info_hashes(handle)
 
             if info_hash in self._torrents:
                 logger.info(f"Magnet already exists: {info_hash}")
@@ -640,7 +641,7 @@ class TorrentSession(QObject):
                 logger.debug(f"Alert processing error ({type(alert).__name__}): {e}")
 
     def _handle_torrent_finished(self, alert):
-        info_hash = str(alert.handle.info_hash())
+        info_hash, _, _ = get_info_hashes(alert.handle)
         self.torrent_finished.emit(info_hash)
         logger.info(f"Torrent finished: {info_hash}")
 
@@ -666,13 +667,13 @@ class TorrentSession(QObject):
                 self.remove_torrent(info_hash)
 
     def _handle_torrent_error(self, alert):
-        info_hash = str(alert.handle.info_hash())
+        info_hash, _, _ = get_info_hashes(alert.handle)
         msg = str(alert.error.message()) if alert.error.value() != 0 else "Unknown error"
         self.torrent_error.emit(info_hash, msg)
         logger.error(f"Torrent error {info_hash}: {msg}")
 
     def _handle_metadata_received(self, alert):
-        info_hash = str(alert.handle.info_hash())
+        info_hash, _, _ = get_info_hashes(alert.handle)
         self.torrent_metadata.emit(info_hash)
         logger.info(f"Metadata received: {info_hash}")
 

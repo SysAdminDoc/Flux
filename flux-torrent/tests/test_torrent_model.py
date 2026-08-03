@@ -1,7 +1,30 @@
 """Unit tests for flux.core.torrent.TorrentSnapshot and TorrentState."""
 
-import pytest
-from flux.core.torrent import TorrentSnapshot, TorrentState
+from flux.core.torrent import TorrentSnapshot, TorrentState, get_info_hashes
+
+
+class _HashSet:
+    def __init__(self, v1="", v2=""):
+        self.v1 = v1
+        self.v2 = v2
+
+    def has_v1(self):
+        return bool(self.v1)
+
+    def has_v2(self):
+        return bool(self.v2)
+
+
+class _HashHandle:
+    def __init__(self, hashes, legacy="legacy"):
+        self._hashes = hashes
+        self._legacy = legacy
+
+    def info_hashes(self):
+        return self._hashes
+
+    def info_hash(self):
+        return self._legacy
 
 
 class TestTorrentSnapshot:
@@ -40,6 +63,25 @@ class TestTorrentSnapshot:
         assert snap.progress == 0.5
         assert snap.eta == 3600
         assert "hd" in snap.tags
+
+    def test_hash_type_distinguishes_v2_and_hybrid(self):
+        assert TorrentSnapshot(info_hash_v2="a" * 64).hash_type == "v2"
+        assert TorrentSnapshot(info_hash_v1="b" * 40, info_hash_v2="a" * 64).hash_type == "hybrid"
+
+    def test_v2_hash_is_not_truncated_by_legacy_accessor(self):
+        v2 = "a" * 64
+        primary, v1, actual_v2 = get_info_hashes(_HashHandle(_HashSet(v2=v2), legacy=v2[:40]))
+        assert primary == v2
+        assert v1 == ""
+        assert actual_v2 == v2
+
+    def test_hybrid_uses_v1_as_legacy_primary_key(self):
+        v1 = "b" * 40
+        v2 = "a" * 64
+        primary, actual_v1, actual_v2 = get_info_hashes(_HashHandle(_HashSet(v1, v2)))
+        assert primary == v1
+        assert actual_v1 == v1
+        assert actual_v2 == v2
 
 
 class TestTorrentState:

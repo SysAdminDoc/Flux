@@ -22,7 +22,7 @@ from dataclasses import dataclass, field
 import libtorrent as lt
 from PyQt6.QtCore import QObject, QTimer, pyqtSignal, pyqtSlot, QThread, QMetaObject, Qt
 
-from flux.core.torrent import Torrent, TorrentSnapshot
+from flux.core.torrent import Torrent, get_info_hashes
 from flux.core.settings import Settings
 from flux.core.peer_filter import PeerFilter
 from flux.core.script_hooks import ScriptHookRunner
@@ -248,7 +248,7 @@ class SessionWorker(QObject):
                 atp.flags |= _FLAG_SEQUENTIAL
 
             handle = self._session.add_torrent(atp)
-            info_hash = str(handle.info_hash())
+            info_hash, _, _ = get_info_hashes(handle)
 
             if info_hash not in self._torrents:
                 torrent = Torrent(handle, category=category, tags=tags)
@@ -286,7 +286,7 @@ class SessionWorker(QObject):
                 atp.flags |= _FLAG_SEQUENTIAL
 
             handle = self._session.add_torrent(atp)
-            info_hash = str(handle.info_hash())
+            info_hash, _, _ = get_info_hashes(handle)
             if info_hash in self._torrents:
                 logger.warning(f"Torrent already exists: {info_hash}")
                 return
@@ -326,7 +326,7 @@ class SessionWorker(QObject):
                 atp.flags |= _FLAG_AUTO_MANAGED
 
             handle = self._session.add_torrent(atp)
-            info_hash = str(handle.info_hash())
+            info_hash, _, _ = get_info_hashes(handle)
 
             if info_hash not in self._torrents:
                 torrent = Torrent(handle, category=category, tags=tags)
@@ -593,7 +593,8 @@ class SessionWorker(QObject):
                 tags = json.loads(tags_json) if tags_json else []
                 torrent = Torrent(handle, category=category, tags=tags)
                 torrent.added_time = added_time or time.time()
-                self._torrents[str(handle.info_hash())] = torrent
+                info_hash, _, _ = get_info_hashes(handle)
+                self._torrents[info_hash] = torrent
                 count += 1
             except Exception as e:
                 logger.error(f"Failed to load torrent {info_hash}: {e}")
@@ -638,7 +639,7 @@ class SessionWorker(QObject):
             return
         try:
             handle = alert.handle
-            info_hash = str(handle.info_hash())
+            info_hash, _, _ = get_info_hashes(handle)
             torrent = self._torrents.get(info_hash)
             data = lt.write_resume_data_buf(alert.params)
             self._resume_db.execute(
@@ -703,14 +704,15 @@ class SessionWorker(QObject):
                 if atype == lt.torrent_finished_alert:
                     self._on_torrent_finished(alert)
                 elif atype == lt.torrent_error_alert:
-                    ih = str(alert.handle.info_hash())
+                    ih, _, _ = get_info_hashes(alert.handle)
                     msg = str(alert.error.message()) if alert.error.value() != 0 else "Unknown"
                     self.torrent_error.emit(ih, msg)
                     t_err = self._torrents.get(ih)
                     if t_err:
                         self._fire_hook("on_error", t_err, error=msg)
                 elif atype == lt.metadata_received_alert:
-                    self.torrent_metadata.emit(str(alert.handle.info_hash()))
+                    ih, _, _ = get_info_hashes(alert.handle)
+                    self.torrent_metadata.emit(ih)
                 elif atype == lt.save_resume_data_alert:
                     self._handle_save_resume_data(alert)
                 elif atype == lt.save_resume_data_failed_alert:
@@ -725,7 +727,7 @@ class SessionWorker(QObject):
                 logger.debug(f"Alert error ({type(alert).__name__}): {e}")
 
     def _on_torrent_finished(self, alert):
-        info_hash = str(alert.handle.info_hash())
+        info_hash, _, _ = get_info_hashes(alert.handle)
         self.torrent_finished.emit(info_hash)
         torrent = self._torrents.get(info_hash)
         if not torrent:

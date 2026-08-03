@@ -13,7 +13,7 @@ from PyQt6.QtWidgets import (
     QInputDialog,
 )
 
-from flux.core.torrent import TorrentSnapshot, TorrentState
+from flux.core.torrent import TorrentSnapshot
 from flux.gui.widgets.speed_graph import SpeedGraphWidget
 from flux.gui.widgets.piece_map import PieceMapWidget
 from flux.utils.formatters import format_bytes, format_speed, format_eta, format_ratio, format_progress
@@ -227,6 +227,7 @@ class DetailPanel(QWidget):
             (5, 0, "ETA:"), (5, 1, "_eta"),
             (5, 2, "Category:"), (5, 3, "_category"),
             (6, 0, "Save Path:"), (6, 1, "_save_path"),
+            (7, 0, "Info Hashes:"), (7, 1, "_hashes"),
         ]
 
         for r, col, text in stat_defs:
@@ -234,8 +235,13 @@ class DetailPanel(QWidget):
                 lbl = QLabel("--")
                 lbl.setStyleSheet(value_style)
                 lbl.setFont(mono)
+                if text == "_hashes":
+                    lbl.setWordWrap(True)
                 self._stat_labels[text] = lbl
-                grid.addWidget(lbl, r, col)
+                if text == "_hashes":
+                    grid.addWidget(lbl, r, col, 1, 3)
+                else:
+                    grid.addWidget(lbl, r, col)
             else:
                 lbl = QLabel(text)
                 self._label_widgets.append(lbl)
@@ -317,6 +323,17 @@ class DetailPanel(QWidget):
         self._stat_labels.get("_eta", QLabel()).setText(format_eta(s.eta))
         self._stat_labels.get("_category", QLabel()).setText(s.category or "--")
         self._stat_labels.get("_save_path", QLabel()).setText(s.save_path)
+        hash_values = []
+        if s.info_hash_v1:
+            hash_values.append(f"v1: {s.info_hash_v1}")
+        if s.info_hash_v2:
+            hash_values.append(f"v2: {s.info_hash_v2}")
+        if not hash_values and s.info_hash:
+            hash_values.append(s.info_hash)
+        hash_label = self._stat_labels.get("_hashes")
+        if hash_label:
+            hash_label.setText("\n".join(hash_values) if hash_values else "--")
+            hash_label.setToolTip("\n".join(hash_values))
 
     # --- Files Tab ---
 

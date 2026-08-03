@@ -493,6 +493,9 @@ def _torrent_payload(snap: Any) -> dict[str, Any]:
     return {
         "name": str(getattr(snap, "name", "") or ""),
         "info_hash": str(getattr(snap, "info_hash", "") or ""),
+        "info_hash_v1": str(getattr(snap, "info_hash_v1", "") or ""),
+        "info_hash_v2": str(getattr(snap, "info_hash_v2", "") or ""),
+        "hash_type": str(getattr(snap, "hash_type", "unknown") or "unknown"),
         "state": state,
         "progress": float(getattr(snap, "progress", 0.0) or 0.0),
         "total_size": int(getattr(snap, "total_size", 0) or 0),

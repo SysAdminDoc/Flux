@@ -8,6 +8,7 @@ A clean, fast, privacy-focused BitTorrent client built with Python, PyQt6, and l
 
 ### Core
 - Full BitTorrent protocol support via libtorrent 2.0+
+- BitTorrent v1, v2, and hybrid torrents with full info-hash pair visibility
 - Magnet link and .torrent file support with drag-and-drop
 - DHT, PEX, LSD for decentralized peer discovery
 - Encryption support (disabled/prefer/require)

@@ -10,7 +10,7 @@ import time
 import logging
 from dataclasses import dataclass
 from enum import Enum, auto
-from typing import Optional, List
+from typing import List
 
 import libtorrent as lt
 
@@ -92,6 +92,8 @@ class TorrentSnapshot:
     state: TorrentState = TorrentState.ERROR
     name: str = "Unknown"
     info_hash: str = ""
+    info_hash_v1: str = ""
+    info_hash_v2: str = ""
     save_path: str = ""
     has_metadata: bool = False
     progress: float = 0.0
@@ -116,6 +118,17 @@ class TorrentSnapshot:
     def __post_init__(self):
         if self.tags is None:
             self.tags = []
+
+    @property
+    def hash_type(self) -> str:
+        """Return the protocol identity represented by this snapshot."""
+        if self.info_hash_v1 and self.info_hash_v2:
+            return "hybrid"
+        if self.info_hash_v2:
+            return "v2"
+        if self.info_hash_v1:
+            return "v1"
+        return "unknown"
 
 
 class Torrent:
@@ -146,6 +159,8 @@ class Torrent:
                     valid=False, state=TorrentState.ERROR,
                     name=self._snap.name or "Invalid",
                     info_hash=self._snap.info_hash,
+                    info_hash_v1=self._snap.info_hash_v1,
+                    info_hash_v2=self._snap.info_hash_v2,
                     category=self._category, tags=self._tags[:],
                     added_time=self._added_time, error="Handle is invalid",
                 )
@@ -161,12 +176,13 @@ class Torrent:
                 name = s.name
             else:
                 try:
-                    name = str(self._handle.info_hash())
+                    name = get_info_hashes(self._handle)[0]
                 except Exception:
                     name = self._snap.name or "Unknown"
 
             state = self._resolve_state(s)
             error = s.errc.message() if s.errc.value() != 0 else ""
+            info_hash, info_hash_v1, info_hash_v2 = get_info_hashes(self._handle)
 
             total_dl = s.all_time_download
             total_ul = s.all_time_upload
@@ -187,7 +203,9 @@ class Torrent:
 
             self._snap = TorrentSnapshot(
                 valid=True, state=state, name=name,
-                info_hash=str(self._handle.info_hash()),
+                info_hash=info_hash,
+                info_hash_v1=info_hash_v1,
+                info_hash_v2=info_hash_v2,
                 save_path=s.save_path, has_metadata=s.has_metadata,
                 progress=s.progress,
                 total_size=s.total_wanted if s.has_metadata else 0,
@@ -208,6 +226,8 @@ class Torrent:
                 valid=False, state=TorrentState.ERROR,
                 name=self._snap.name or "Error",
                 info_hash=self._snap.info_hash,
+                info_hash_v1=self._snap.info_hash_v1,
+                info_hash_v2=self._snap.info_hash_v2,
                 category=self._category, tags=self._tags[:],
                 added_time=self._added_time, error=str(e),
             )
@@ -268,6 +288,18 @@ class Torrent:
     @property
     def info_hash(self) -> str:
         return self._snap.info_hash
+
+    @property
+    def info_hash_v1(self) -> str:
+        return self._snap.info_hash_v1
+
+    @property
+    def info_hash_v2(self) -> str:
+        return self._snap.info_hash_v2
+
+    @property
+    def hash_type(self) -> str:
+        return self._snap.hash_type
 
     @property
     def name(self) -> str:
@@ -640,7 +672,40 @@ class Torrent:
     def to_dict(self) -> dict:
         return {
             "info_hash": self.info_hash,
+            "info_hash_v1": self.info_hash_v1,
+            "info_hash_v2": self.info_hash_v2,
+            "hash_type": self.hash_type,
             "category": self._category,
             "tags": self._tags,
             "added_time": self._added_time,
         }
+
+
+def get_info_hashes(handle: lt.torrent_handle) -> tuple[str, str, str]:
+    """Return ``(primary, v1, v2)`` without truncating v2 identities.
+
+    ``torrent_handle.info_hash()`` is retained by libtorrent for legacy
+    callers and returns a 20-byte representation even for a v2-only torrent.
+    The structured ``info_hashes()`` value is the authoritative source.
+    """
+    info_hash_v1 = ""
+    info_hash_v2 = ""
+    try:
+        hashes = handle.info_hashes()
+        if hashes.has_v1():
+            info_hash_v1 = str(hashes.v1)
+        if hashes.has_v2():
+            info_hash_v2 = str(hashes.v2)
+    except (AttributeError, RuntimeError, TypeError):
+        pass
+
+    if info_hash_v1:
+        primary = info_hash_v1
+    elif info_hash_v2:
+        primary = info_hash_v2
+    else:
+        try:
+            primary = str(handle.info_hash())
+        except Exception:
+            primary = ""
+    return primary, info_hash_v1, info_hash_v2

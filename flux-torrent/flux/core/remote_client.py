@@ -499,6 +499,8 @@ def _snapshot_from_payload(item: dict[str, Any]) -> TorrentSnapshot:
         state=state,
         name=str(item.get("name", "Unknown") or "Unknown"),
         info_hash=str(item.get("info_hash", "") or ""),
+        info_hash_v1=str(item.get("info_hash_v1", "") or ""),
+        info_hash_v2=str(item.get("info_hash_v2", "") or ""),
         save_path=str(item.get("save_path", "") or ""),
         has_metadata=bool(item.get("total_size", 0)),
         progress=_as_float(item.get("progress")),
