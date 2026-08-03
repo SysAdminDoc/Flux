@@ -4,13 +4,14 @@ import os
 import logging
 from pathlib import Path
 
-from PyQt6.QtCore import Qt, QThread, pyqtSignal
+from PyQt6.QtCore import QThread, pyqtSignal
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
     QPushButton, QFileDialog, QComboBox, QCheckBox, QTextEdit,
-    QProgressBar, QGroupBox, QFormLayout, QSpinBox, QMessageBox,
+    QProgressBar, QGroupBox, QFormLayout, QMessageBox, QInputDialog,
 )
 
+from flux.core.creation_presets import CreationPreset, parse_creation_presets, upsert_creation_preset
 from flux.gui.themes import c
 from flux.utils.formatters import format_bytes
 
@@ -150,8 +151,18 @@ class CreateTorrentDialog(QDialog):
 
     torrent_created = pyqtSignal(str)  # output path
 
-    def __init__(self, parent=None):
+    def __init__(self, settings=None, parent=None):
+        # Preserve the old CreateTorrentDialog(parent) call shape for external
+        # callers while allowing MainWindow to pass its persistent Settings.
+        if settings is not None and not hasattr(settings, "get"):
+            if parent is None:
+                parent = settings
+            settings = None
         super().__init__(parent)
+        self._settings = settings
+        self._presets = parse_creation_presets(
+            settings.get("creation_presets", []) if settings else []
+        )
         self.setWindowTitle("Create Torrent")
         self.setMinimumWidth(550)
         self.setMinimumHeight(500)
@@ -162,6 +173,23 @@ class CreateTorrentDialog(QDialog):
     def _setup_ui(self):
         layout = QVBoxLayout(self)
         layout.setSpacing(12)
+
+        # --- Creation preset ---
+        preset_group = QGroupBox("Creation preset")
+        preset_layout = QHBoxLayout(preset_group)
+        self._preset_combo = QComboBox()
+        preset_layout.addWidget(self._preset_combo, 1)
+        load_preset = QPushButton("Load")
+        load_preset.clicked.connect(self._load_selected_preset)
+        preset_layout.addWidget(load_preset)
+        save_preset = QPushButton("Save As...")
+        save_preset.clicked.connect(self._save_preset)
+        preset_layout.addWidget(save_preset)
+        delete_preset = QPushButton("Delete")
+        delete_preset.clicked.connect(self._delete_selected_preset)
+        preset_layout.addWidget(delete_preset)
+        self._refresh_preset_combo()
+        layout.addWidget(preset_group)
 
         # --- Source ---
         src_group = QGroupBox("Source")
@@ -342,6 +370,68 @@ class CreateTorrentDialog(QDialog):
         base = Path(path).stem
         default_out = str(Path(path).parent / f"{base}.torrent")
         self._output_edit.setText(default_out)
+
+    def _refresh_preset_combo(self, selected_name: str = ""):
+        self._preset_combo.blockSignals(True)
+        self._preset_combo.clear()
+        self._preset_combo.addItem("Select a saved preset...", "")
+        for preset in self._presets:
+            self._preset_combo.addItem(preset.name, preset.name)
+        index = self._preset_combo.findData(selected_name)
+        self._preset_combo.setCurrentIndex(index if index >= 0 else 0)
+        self._preset_combo.blockSignals(False)
+
+    def _current_preset(self, name: str) -> CreationPreset:
+        return CreationPreset(
+            name=name,
+            piece_size=self._piece_combo.currentData() or 0,
+            trackers=[item.strip() for item in self._tracker_edit.toPlainText().splitlines() if item.strip()],
+            private=self._private_check.isChecked(),
+            comment=self._comment_edit.text().strip(),
+            web_seeds=[item.strip() for item in self._webseed_edit.toPlainText().splitlines() if item.strip()],
+        )
+
+    def _load_selected_preset(self):
+        name = self._preset_combo.currentData()
+        if not name:
+            return
+        preset = next((item for item in self._presets if item.name == name), None)
+        if not preset:
+            return
+        piece_index = self._piece_combo.findData(preset.piece_size)
+        self._piece_combo.setCurrentIndex(piece_index if piece_index >= 0 else 0)
+        self._tracker_edit.setPlainText("\n".join(preset.trackers))
+        self._private_check.setChecked(preset.private)
+        self._comment_edit.setText(preset.comment)
+        self._webseed_edit.setPlainText("\n".join(preset.web_seeds))
+
+    def _save_preset(self):
+        if self._settings is None:
+            QMessageBox.warning(self, "Presets", "Persistent settings are unavailable.")
+            return
+        name, accepted = QInputDialog.getText(self, "Save Creation Preset", "Preset name:")
+        name = name.strip()
+        if not accepted or not name:
+            return
+        self._presets = upsert_creation_preset(self._presets, self._current_preset(name))
+        self._settings.set("creation_presets", [item.to_dict() for item in self._presets])
+        self._refresh_preset_combo(name)
+
+    def _delete_selected_preset(self):
+        if self._settings is None:
+            return
+        name = self._preset_combo.currentData()
+        if not name:
+            return
+        answer = QMessageBox.question(
+            self, "Delete Creation Preset", f"Delete '{name}'?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        self._presets = [item for item in self._presets if item.name != name]
+        self._settings.set("creation_presets", [item.to_dict() for item in self._presets])
+        self._refresh_preset_combo()
 
     def _pick_output(self):
         path, _ = QFileDialog.getSaveFileName(

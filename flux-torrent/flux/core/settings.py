@@ -32,6 +32,7 @@ class Settings:
         # Private-tracker profile
         "private_tracker_profile": False,
         "private_tracker_unchoke_slots": 4,
+        "creation_presets": [],
         # I2P SAM bridge
         "i2p_enabled": False,
         "i2p_hostname": "127.0.0.1",

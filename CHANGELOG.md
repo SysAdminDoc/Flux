@@ -24,6 +24,7 @@ All notable changes to Flux will be documented in this file.
   verification matching.
 - Added a private-tracker profile that disables DHT/PEX/LSD and applies a bounded unchoke-slot cap
   to existing and newly added torrents.
+- Added named creation presets for piece size, trackers, private flag, comments, and web seeds.
 
 ## [v0.1.0] - %Y->- (HEAD -> main, origin/main, origin/HEAD)
 

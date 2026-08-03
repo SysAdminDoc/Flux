@@ -726,7 +726,7 @@ class MainWindow(QMainWindow):
         self._toggle_sidebar_action.setChecked(is_visible)
 
     def _on_create_torrent(self):
-        dlg = CreateTorrentDialog(self)
+        dlg = CreateTorrentDialog(self._settings, self)
         dlg.exec()
 
     def _on_open_rss_manager(self):
