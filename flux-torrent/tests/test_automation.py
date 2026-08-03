@@ -2,6 +2,7 @@
 
 import tempfile
 import unittest
+from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -10,6 +11,9 @@ from flux.core.automation import (
     ensure_move_path,
     label_rule_for,
     parse_label_rules,
+    build_torrent_schedules,
+    parse_torrent_schedules,
+    scheduled_action,
     should_auto_delete,
 )
 
@@ -67,6 +71,18 @@ class TestLabelAutomation(unittest.TestCase):
         self.assertFalse(should_auto_delete(base, settings))
         base.progress = 0.5
         self.assertFalse(should_auto_delete(base, settings))
+
+    def test_schedule_handles_weekdays_and_overnight_windows(self):
+        info_hash = "a" * 40
+        raw = {
+            info_hash: {"start": "22:00", "stop": "02:00", "days": [0, 2]},
+        }
+        schedules = parse_torrent_schedules(raw)
+        self.assertEqual(scheduled_action(info_hash, schedules, datetime(2026, 8, 3, 23, 0)), "resume")
+        self.assertEqual(scheduled_action(info_hash, schedules, datetime(2026, 8, 4, 1, 0)), "resume")
+        self.assertEqual(scheduled_action(info_hash, schedules, datetime(2026, 8, 4, 3, 0)), "pause")
+        self.assertEqual(scheduled_action(info_hash, schedules, datetime(2026, 8, 4, 23, 0)), "pause")
+        self.assertEqual(build_torrent_schedules({"torrent_schedules": raw})[info_hash]["days"], [0, 2])
 
 
 if __name__ == "__main__":

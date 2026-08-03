@@ -10,7 +10,11 @@ from PyQt6.QtWidgets import (
     QRadioButton, QButtonGroup, QFrame, QPlainTextEdit
 )
 
-from flux.core.settings import build_tracker_proxy_rules, build_label_automation_rules
+from flux.core.settings import (
+    build_tracker_proxy_rules,
+    build_label_automation_rules,
+    build_torrent_schedule_settings,
+)
 
 
 class SettingsDialog(QDialog):
@@ -494,6 +498,21 @@ class SettingsDialog(QDialog):
         auto_delete_layout.addWidget(delete_files, 3, 0, 1, 4)
         layout.addWidget(auto_delete_group)
 
+        schedule_group = QGroupBox("Per-torrent start/stop schedules")
+        schedule_layout = QVBoxLayout(schedule_group)
+        schedule_layout.addWidget(QLabel(
+            "JSON object keyed by info hash. Days use Monday=0 through Sunday=6; overnight windows are supported."
+        ))
+        schedules = QPlainTextEdit()
+        schedules.setPlaceholderText(
+            '{"0123456789abcdef0123456789abcdef01234567": '
+            '{"start":"08:00","stop":"23:00","days":[0,1,2,3,4],"enabled":true}}'
+        )
+        schedules.setMaximumHeight(125)
+        self._widgets["torrent_schedules"] = schedules
+        schedule_layout.addWidget(schedules)
+        layout.addWidget(schedule_group)
+
         layout.addStretch()
         return page
 
@@ -735,6 +754,9 @@ class SettingsDialog(QDialog):
             s.get("auto_delete_exclude_label", "archive")
         )
         self._widgets["auto_delete_files"].setChecked(s.get("auto_delete_files", True))
+        self._widgets["torrent_schedules"].setPlainText(json.dumps(
+            s.get("torrent_schedules", {}) or {}, indent=2
+        ))
 
         # Remote
         self._widgets["remote_enabled"].setChecked(s.get("remote_enabled", False))
@@ -838,6 +860,13 @@ class SettingsDialog(QDialog):
         s.set("auto_delete_seed_days", self._widgets["auto_delete_seed_days"].value())
         s.set("auto_delete_exclude_label", self._widgets["auto_delete_exclude_label"].text().strip())
         s.set("auto_delete_files", self._widgets["auto_delete_files"].isChecked())
+        try:
+            schedules = json.loads(self._widgets["torrent_schedules"].toPlainText() or "{}")
+        except json.JSONDecodeError:
+            schedules = s.get("torrent_schedules", {}) or {}
+        s.set("torrent_schedules", build_torrent_schedule_settings({
+            "torrent_schedules": schedules
+        }))
 
         # Remote
         s.set("remote_enabled", self._widgets["remote_enabled"].isChecked())

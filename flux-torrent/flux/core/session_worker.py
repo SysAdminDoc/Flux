@@ -28,11 +28,14 @@ from flux.core.settings import (
     build_i2p_settings,
     build_tracker_proxy_rules,
     build_label_automation_rules,
+    build_torrent_schedule_settings,
 )
 from flux.core.automation import (
     ensure_move_path,
     label_rule_for,
     parse_label_rules,
+    parse_torrent_schedules,
+    scheduled_action,
     should_auto_delete,
 )
 from flux.core.peer_filter import PeerFilter
@@ -107,6 +110,7 @@ class SessionWorker(QObject):
         self._ip_filter: Optional[lt.ip_filter] = None
         self._tracker_proxy_manager = TrackerProxyManager()
         self._label_rules = ()
+        self._torrent_schedules = {}
 
         self._session_dl_history: list = []
         self._session_ul_history: list = []
@@ -187,6 +191,9 @@ class SessionWorker(QObject):
         self._peer_filter.configure(self._cfg)
         self._tracker_proxy_manager.configure(build_tracker_proxy_rules(self._cfg))
         self._label_rules = parse_label_rules(build_label_automation_rules(self._cfg))
+        self._torrent_schedules = parse_torrent_schedules(
+            build_torrent_schedule_settings(self._cfg)
+        )
 
         self._init_resume_db()
         self._load_ip_blocklist()
@@ -526,6 +533,9 @@ class SessionWorker(QObject):
             self._cfg = cfg
             self._tracker_proxy_manager.configure(build_tracker_proxy_rules(self._cfg))
             self._label_rules = parse_label_rules(build_label_automation_rules(self._cfg))
+            self._torrent_schedules = parse_torrent_schedules(
+                build_torrent_schedule_settings(self._cfg)
+            )
         if not self._session:
             return
         settings = {}
@@ -931,6 +941,7 @@ class SessionWorker(QObject):
     # --- Internal: Bandwidth schedule ---
 
     def _check_bandwidth_schedule(self):
+        self._check_torrent_schedules()
         schedule = self._cfg.get("bandwidth_schedule", None)
         if not schedule or not isinstance(schedule, dict):
             return
@@ -958,6 +969,22 @@ class SessionWorker(QObject):
                 'download_rate_limit': dl if dl > 0 else 0,
                 'upload_rate_limit': ul if ul > 0 else 0,
             })
+
+    def _check_torrent_schedules(self):
+        """Apply recurring per-torrent start/stop windows."""
+        for info_hash in self._torrent_schedules:
+            torrent = self._torrents.get(info_hash)
+            if not torrent or not torrent.is_valid:
+                continue
+            action = scheduled_action(info_hash, self._torrent_schedules)
+            try:
+                paused = torrent.handle.is_paused()
+            except Exception:
+                paused = False
+            if action == "pause" and not paused:
+                torrent.pause()
+            elif action == "resume" and paused:
+                torrent.resume()
 
 
 class ThreadedSession:

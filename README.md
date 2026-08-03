@@ -85,6 +85,9 @@ Label automation rules are configured in Settings > Behavior as a JSON array. Ea
 Conditional auto-delete is separately configurable in Settings > Behavior. It uses an OR between
 the ratio and seeded-days thresholds, skips the configured exclusion label (default `archive`),
 and can remove the downloaded files with the torrent.
+Per-torrent start/stop schedules are also available as an info-hash keyed JSON object in the
+Behavior tab. Schedules use local time, Monday=0 through Sunday=6, and support windows that cross
+midnight.
 
 ## Usage
 

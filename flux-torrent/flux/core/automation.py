@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from datetime import datetime, time as clock_time
 from pathlib import Path
 from typing import Any
 
@@ -25,6 +26,25 @@ class LabelAutomationRule:
             "tracker_overrides": list(self.tracker_overrides),
             "ratio_limit": self.ratio_limit,
             "upload_limit": self.upload_limit,
+        }
+
+
+@dataclass(frozen=True)
+class TorrentSchedule:
+    """A recurring local-time start/stop window for one torrent."""
+
+    info_hash: str
+    start: clock_time
+    stop: clock_time
+    days: tuple[int, ...] = (0, 1, 2, 3, 4, 5, 6)
+    enabled: bool = True
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "start": self.start.strftime("%H:%M"),
+            "stop": self.stop.strftime("%H:%M"),
+            "days": list(self.days),
+            "enabled": self.enabled,
         }
 
 
@@ -131,6 +151,101 @@ def should_auto_delete(snapshot: Any, values: dict[str, Any]) -> bool:
 def build_label_rules(values: dict[str, Any]) -> list[dict[str, Any]]:
     """Return the canonical persistent shape for the settings dialog."""
     return [rule.to_dict() for rule in parse_label_rules(values.get("label_rules", []))]
+
+
+def parse_torrent_schedules(raw: Any) -> dict[str, TorrentSchedule]:
+    """Parse ``info_hash -> schedule`` settings and discard invalid rows."""
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except json.JSONDecodeError:
+            return {}
+    if isinstance(raw, list):
+        rows = {}
+        for item in raw:
+            if isinstance(item, dict):
+                info_hash = item.get("info_hash", item.get("hash", ""))
+                rows[info_hash] = item
+    elif isinstance(raw, dict):
+        rows = raw
+    else:
+        return {}
+
+    parsed: dict[str, TorrentSchedule] = {}
+    for info_hash_value, row in rows.items():
+        if not isinstance(row, dict):
+            continue
+        info_hash = str(row.get("info_hash", info_hash_value) or "").strip()
+        start = _parse_clock_time(row.get("start"))
+        stop = _parse_clock_time(row.get("stop"))
+        if not info_hash or start is None or stop is None:
+            continue
+        raw_days = row.get("days", range(7))
+        if isinstance(raw_days, str):
+            raw_days = raw_days.replace(",", " ").split()
+        try:
+            days = tuple(sorted({int(day) for day in raw_days if 0 <= int(day) <= 6}))
+        except (TypeError, ValueError):
+            days = ()
+        if not days:
+            continue
+        parsed[info_hash] = TorrentSchedule(
+            info_hash=info_hash,
+            start=start,
+            stop=stop,
+            days=days,
+            enabled=bool(row.get("enabled", True)),
+        )
+    return parsed
+
+
+def build_torrent_schedules(values: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """Return canonical persistent schedule settings."""
+    return {
+        info_hash: schedule.to_dict()
+        for info_hash, schedule in parse_torrent_schedules(
+            values.get("torrent_schedules", {})
+        ).items()
+    }
+
+
+def scheduled_action(
+    info_hash: str, schedules: Any, now: datetime | None = None
+) -> str | None:
+    """Return ``resume`` inside a window, ``pause`` outside it, or ``None``."""
+    parsed = (
+        schedules if isinstance(schedules, dict)
+        and all(isinstance(value, TorrentSchedule) for value in schedules.values())
+        else parse_torrent_schedules(schedules)
+    )
+    schedule = parsed.get(info_hash)
+    if schedule is None or not schedule.enabled:
+        return None
+    current = now or datetime.now()
+    current_time = current.time().replace(second=0, microsecond=0)
+    minute = current_time.hour * 60 + current_time.minute
+    start = schedule.start.hour * 60 + schedule.start.minute
+    stop = schedule.stop.hour * 60 + schedule.stop.minute
+    weekday = current.weekday()
+    if start == stop:
+        active = weekday in schedule.days
+    elif start < stop:
+        active = weekday in schedule.days and start <= minute < stop
+    else:
+        previous_day = (weekday - 1) % 7
+        active = (
+            (weekday in schedule.days and minute >= start)
+            or (previous_day in schedule.days and minute < stop)
+        )
+    return "resume" if active else "pause"
+
+
+def _parse_clock_time(value: Any) -> clock_time | None:
+    try:
+        parsed = datetime.strptime(str(value or ""), "%H:%M")
+        return parsed.time()
+    except (TypeError, ValueError):
+        return None
 
 
 def ensure_move_path(path: str) -> str:

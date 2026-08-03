@@ -5,7 +5,7 @@ import sqlite3
 from pathlib import Path
 from typing import Any, Optional
 
-from flux.core.automation import build_label_rules
+from flux.core.automation import build_label_rules, build_torrent_schedules
 from flux.core.tracker_proxy import tracker_proxy_rules_to_settings
 
 
@@ -56,6 +56,7 @@ class Settings:
         "auto_delete_seed_days": 0.0,
         "auto_delete_exclude_label": "archive",
         "auto_delete_files": True,
+        "torrent_schedules": {},
         # Paths
         "default_save_path": str(Path.home() / "Downloads"),
         "temp_path_enabled": False,
@@ -235,3 +236,8 @@ def build_tracker_proxy_rules(values: dict[str, Any]) -> list[dict[str, str]]:
 def build_label_automation_rules(values: dict[str, Any]) -> list[dict[str, Any]]:
     """Return validated label-scoped automation rules."""
     return build_label_rules(values)
+
+
+def build_torrent_schedule_settings(values: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """Return validated per-torrent schedule settings."""
+    return build_torrent_schedules(values)
