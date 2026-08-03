@@ -15,6 +15,7 @@ import gzip
 import http.client
 import ipaddress
 import logging
+import secrets
 import socket
 import ssl
 import struct
@@ -100,6 +101,21 @@ class TrackerAnnounceResult:
     @property
     def ok(self) -> bool:
         return not self.failure
+
+    @property
+    def error_class(self) -> str:
+        """Return a stable category suitable for UI and API summaries."""
+        if self.ok:
+            return ""
+        if self.failure.startswith("HTTP "):
+            return "HTTP"
+        if self.failure.startswith("Invalid bencode") or self.failure.startswith("Tracker"):
+            return "Protocol"
+        if self.failure.startswith("UDP "):
+            return "UDP"
+        if "proxy" in self.failure.lower() or "SOCKS5" in self.failure:
+            return "Proxy"
+        return "Network"
 
 
 @dataclass
@@ -273,11 +289,16 @@ class TrackerAnnounceClient:
     def announce(
         self,
         tracker_url: str,
-        proxy: TrackerProxy,
+        proxy: TrackerProxy | None,
         request: TrackerAnnounceRequest,
     ) -> TrackerAnnounceResult:
-        if not is_proxyable_tracker(tracker_url):
-            return TrackerAnnounceResult(failure="Only HTTP(S) trackers support proxy routing")
+        scheme = urlsplit(str(tracker_url or "")).scheme.lower()
+        if scheme == "udp":
+            if proxy is not None:
+                return TrackerAnnounceResult(failure="UDP trackers cannot use an HTTP proxy")
+            return self._udp_announce(tracker_url, request)
+        if scheme not in SUPPORTED_TRACKER_SCHEMES:
+            return TrackerAnnounceResult(failure="Tracker protocol is not supported")
         try:
             url = build_announce_url(tracker_url, request)
             return self._request(url, proxy)
@@ -285,7 +306,7 @@ class TrackerAnnounceClient:
             logger.debug("Proxy tracker announce failed for %s: %s", tracker_url, exc)
             return TrackerAnnounceResult(failure=f"{type(exc).__name__}: {exc}")
 
-    def _request(self, url: str, proxy: TrackerProxy) -> TrackerAnnounceResult:
+    def _request(self, url: str, proxy: TrackerProxy | None) -> TrackerAnnounceResult:
         target = urlsplit(url)
         if not target.hostname:
             return TrackerAnnounceResult(failure="Tracker URL has no hostname")
@@ -323,13 +344,86 @@ class TrackerAnnounceClient:
             except OSError:
                 pass
 
+    def _udp_announce(
+        self, tracker_url: str, request: TrackerAnnounceRequest
+    ) -> TrackerAnnounceResult:
+        """Perform a direct BEP 15 UDP announce for the test tool."""
+        if len(request.info_hash) != 20:
+            return TrackerAnnounceResult(failure="UDP trackers require a v1 info hash")
+        target = urlsplit(tracker_url)
+        if not target.hostname:
+            return TrackerAnnounceResult(failure="UDP tracker URL has no hostname")
+        try:
+            target_port = target.port or 80
+            transaction = secrets.randbits(32)
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+                sock.settimeout(self.timeout)
+                sock.connect((target.hostname, target_port))
+                sock.send(struct.pack("!qII", 0x41727101980, 0, transaction))
+                response = sock.recv(2048)
+                if len(response) < 16:
+                    return TrackerAnnounceResult(failure="UDP tracker connect response is too short")
+                action, received_tx, connection_id = struct.unpack("!IIq", response[:16])
+                if received_tx != transaction or action != 0:
+                    return TrackerAnnounceResult(failure="UDP tracker connect response was invalid")
+
+                event = {"completed": 1, "started": 2, "stopped": 3}.get(request.event, 0)
+                announce_transaction = secrets.randbits(32)
+                packet = struct.pack(
+                    "!qII20s20sQQQIIIiH",
+                    connection_id,
+                    1,
+                    announce_transaction,
+                    request.info_hash,
+                    request.peer_id,
+                    max(0, int(request.downloaded)),
+                    max(0, int(request.left)),
+                    max(0, int(request.uploaded)),
+                    event,
+                    0,
+                    secrets.randbits(32),
+                    50,
+                    max(0, int(request.port)),
+                )
+                sock.send(packet)
+                response = sock.recv(64 * 1024)
+            if len(response) < 20:
+                return TrackerAnnounceResult(failure="UDP tracker announce response is too short")
+            action, received_tx, interval, peers_available, seeds = struct.unpack(
+                "!IIIII", response[:20]
+            )
+            if received_tx != announce_transaction or action != 1:
+                return TrackerAnnounceResult(failure="UDP tracker announce response was invalid")
+            peers = []
+            compact = response[20:]
+            for offset in range(0, len(compact) - 5, 6):
+                host = str(ipaddress.ip_address(compact[offset:offset + 4]))
+                port = struct.unpack("!H", compact[offset + 4:offset + 6])[0]
+                if port:
+                    peers.append((host, port))
+            return TrackerAnnounceResult(
+                peers=tuple(dict.fromkeys(peers)),
+                interval=_positive_int(interval, DEFAULT_TRACKER_ANNOUNCE_INTERVAL),
+                seeds=seeds,
+                peers_available=peers_available,
+            )
+        except Exception as exc:
+            logger.debug("UDP tracker announce failed for %s: %s", tracker_url, exc)
+            return TrackerAnnounceResult(failure=f"UDP {type(exc).__name__}: {exc}")
+
     def _open_tunnel(
         self,
         target_host: str,
         target_port: int,
         target_scheme: str,
-        proxy: TrackerProxy,
+        proxy: TrackerProxy | None,
     ) -> socket.socket:
+        if proxy is None:
+            sock = socket.create_connection((target_host, target_port), self.timeout)
+            if target_scheme == "https":
+                context = ssl.create_default_context()
+                sock = context.wrap_socket(sock, server_hostname=target_host)
+            return sock
         if proxy.scheme == "socks5":
             sock = socket.create_connection((proxy.host, proxy.port), self.timeout)
             try:
@@ -531,6 +625,34 @@ class TrackerProxyManager:
     def configure(self, raw_rules: Any) -> None:
         self._rules = parse_tracker_proxy_rules(raw_rules)
 
+    def proxy_for_url(self, tracker_url: str) -> TrackerProxy | None:
+        """Return the configured proxy for an exact tracker URL, if any."""
+        rule = self._rule_for(normalize_tracker_url(tracker_url))
+        return rule.proxy if rule is not None else None
+
+    def test_announce(self, torrent: Any, tracker_url: str, session: Any,
+                      listen_port: int) -> dict[str, Any]:
+        """Run one synthetic announce and return a GUI-safe result payload."""
+        request = build_tracker_announce_request(torrent.handle, session, listen_port)
+        if request is None:
+            result = TrackerAnnounceResult(failure="Torrent metadata is not available")
+        else:
+            result = self._client.announce(
+                tracker_url, self.proxy_for_url(tracker_url), request
+            )
+        return {
+            "ok": result.ok,
+            "transport": urlsplit(tracker_url).scheme.lower(),
+            "proxy": self.proxy_for_url(tracker_url).display_name()
+            if self.proxy_for_url(tracker_url) else "Direct",
+            "error_class": result.error_class,
+            "message": result.failure or result.warning or "Announce succeeded",
+            "interval": result.interval,
+            "peers": len(result.peers),
+            "seeds": result.seeds,
+            "peers_available": result.peers_available,
+        }
+
     def close(self) -> None:
         for future in self._futures:
             future.cancel()
@@ -715,3 +837,26 @@ def _announce_info_hash_bytes(handle: Any) -> bytes:
         return handle.info_hash().to_bytes()
     except Exception:
         return b""
+
+
+def build_tracker_announce_request(
+    handle: Any, session: Any, listen_port: int, event: str = ""
+) -> TrackerAnnounceRequest | None:
+    """Create announce values from libtorrent objects on the worker thread."""
+    try:
+        status = handle.status()
+        info_hash = _announce_info_hash_bytes(handle)
+        if not info_hash or not getattr(status, "has_metadata", False):
+            return None
+        peer_id = session.id().to_bytes()
+        return TrackerAnnounceRequest(
+            info_hash=info_hash,
+            peer_id=peer_id,
+            port=max(0, int(listen_port)),
+            uploaded=max(0, int(status.all_time_upload)),
+            downloaded=max(0, int(status.all_time_download)),
+            left=max(0, int(status.total_wanted - status.total_wanted_done)),
+            event=event,
+        )
+    except Exception:
+        return None

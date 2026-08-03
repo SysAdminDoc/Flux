@@ -51,6 +51,7 @@ class DetailPanel(QWidget):
         self.on_set_file_priority = None   # (info_hash, file_index, priority) -> None
         self.on_add_tracker = None         # (info_hash, url) -> None
         self.on_remove_tracker = None      # (info_hash, url) -> None
+        self.on_test_tracker = None        # (info_hash, url) -> None
 
     def _setup_ui(self):
         layout = QVBoxLayout(self)
@@ -143,6 +144,8 @@ class DetailPanel(QWidget):
         self._trackers_table.verticalHeader().setVisible(False)
         self._trackers_table.setAlternatingRowColors(True)
         self._trackers_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self._trackers_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self._trackers_table.customContextMenuRequested.connect(self._show_tracker_context_menu)
         trackers_layout.addWidget(self._trackers_table)
 
         self._tabs.addTab(trackers_widget, "Trackers")
@@ -494,6 +497,30 @@ class DetailPanel(QWidget):
         url_item = self._trackers_table.item(row, 0)
         if url_item and self.on_remove_tracker:
             self.on_remove_tracker(self._current_hash, url_item.text())
+
+    def _show_tracker_context_menu(self, position):
+        item = self._trackers_table.itemAt(position)
+        if item is None:
+            return
+        self._trackers_table.selectRow(item.row())
+        menu = QMenu(self)
+        test_action = menu.addAction("Test Announce")
+        test_action.triggered.connect(self._on_test_tracker)
+        menu.addSeparator()
+        remove_action = menu.addAction("Remove Tracker")
+        remove_action.triggered.connect(self._on_remove_tracker)
+        menu.exec(self._trackers_table.viewport().mapToGlobal(position))
+
+    def _on_test_tracker(self):
+        if not self._current_hash:
+            return
+        selected = self._trackers_table.selectedItems()
+        if not selected or not self.on_test_tracker:
+            return
+        row = selected[0].row()
+        url_item = self._trackers_table.item(row, 0)
+        if url_item:
+            self.on_test_tracker(self._current_hash, url_item.text())
 
     # --- Pieces Tab ---
 

@@ -2,6 +2,7 @@
 
 import unittest
 import socketserver
+import struct
 import threading
 
 from flux.core.tracker_proxy import (
@@ -61,6 +62,38 @@ class TestTrackerProxyRules(unittest.TestCase):
 
 
 class TestTrackerAnnounce(unittest.TestCase):
+    def test_direct_udp_announce(self):
+        class UdpTracker(socketserver.BaseRequestHandler):
+            def handle(self):
+                data, sock = self.request
+                action = struct.unpack("!I", data[8:12])[0]
+                transaction = struct.unpack("!I", data[12:16])[0]
+                if action == 0:
+                    sock.sendto(struct.pack("!IIq", 0, transaction, 1234), self.client_address)
+                elif action == 1:
+                    response = struct.pack("!IIIII", 1, transaction, 60, 4, 3)
+                    response += b"\x7f\x00\x00\x01\x1a\xe1"
+                    sock.sendto(response, self.client_address)
+
+        server = socketserver.ThreadingUDPServer(("127.0.0.1", 0), UdpTracker)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            request = TrackerAnnounceRequest(
+                b"01234567890123456789", b"-FX1000-123456789012", 6881, 0, 0, 1
+            )
+            result = TrackerAnnounceClient(2).announce(
+                f"udp://127.0.0.1:{server.server_address[1]}/announce", None, request
+            )
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
+
+        self.assertTrue(result.ok, result)
+        self.assertEqual(result.interval, 60)
+        self.assertEqual(result.peers, (("127.0.0.1", 6881),))
+
     def test_http_proxy_tunnel_carries_announce_request(self):
         requests = []
 

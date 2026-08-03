@@ -11,6 +11,7 @@ All notable changes to Flux will be documented in this file.
 - Added validated I2P SAM bridge settings and session wiring for outbound I2P transport.
 - Added per-tracker HTTP(S) announce routing through SOCKS5 or HTTP(S) proxies, including peer
   injection, tracker status reporting, and credential-redacted remote settings.
+- Added a tracker-table announce test action for direct HTTP(S)/UDP and configured proxy routes.
 
 ## [v0.1.0] - %Y->- (HEAD -> main, origin/main, origin/HEAD)
 

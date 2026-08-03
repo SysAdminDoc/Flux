@@ -512,6 +512,8 @@ class MainWindow(QMainWindow):
         w.detail_updated.connect(self._on_detail_updated)
         w.peer_banned.connect(self._on_peer_banned)
         w.magnet_uri_ready.connect(self._on_magnet_uri_ready)
+        if hasattr(w, "tracker_tested"):
+            w.tracker_tested.connect(self._on_tracker_tested)
 
         # Remote API -> worker
         self.remote_add_magnet_requested.connect(w.add_magnet)
@@ -526,6 +528,7 @@ class MainWindow(QMainWindow):
         self._detail_panel.on_set_file_priority = w.set_file_priority
         self._detail_panel.on_add_tracker = w.add_tracker
         self._detail_panel.on_remove_tracker = w.remove_tracker
+        self._detail_panel.on_test_tracker = getattr(w, "test_tracker", None)
 
         # Sidebar
         self._sidebar.filter_changed.connect(self._on_filter_state_changed)
@@ -1075,6 +1078,31 @@ class MainWindow(QMainWindow):
 
     def _on_peer_banned(self, ip, reason):
         self._status_label.setText(f"Banned peer {ip}: {reason}")
+
+    def _on_tracker_tested(self, info_hash: str, url: str, result: object):
+        """Show a compact synthetic announce result for the selected tracker."""
+        payload = result if isinstance(result, dict) else {}
+        ok = bool(payload.get("ok", False))
+        title = "Tracker announce succeeded" if ok else "Tracker announce failed"
+        lines = [
+            f"Tracker: {url}",
+            f"Transport: {payload.get('transport', 'unknown').upper()}",
+            f"Route: {payload.get('proxy', 'Direct')}",
+        ]
+        if ok:
+            lines.extend([
+                f"Peers returned: {payload.get('peers', 0)}",
+                f"Seeds: {payload.get('seeds', 0)}",
+                f"Leechers: {payload.get('peers_available', 0)}",
+                f"Next announce: {payload.get('interval', 0)} seconds",
+            ])
+            QMessageBox.information(self, title, "\n".join(lines))
+        else:
+            lines.extend([
+                f"Error class: {payload.get('error_class', 'Unknown')}",
+                f"Message: {payload.get('message', 'Unknown error')}",
+            ])
+            QMessageBox.warning(self, title, "\n".join(lines))
 
     # ------------------------------------------------------------------ #
     #  Shutdown

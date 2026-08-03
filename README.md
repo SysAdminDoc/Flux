@@ -74,7 +74,9 @@ I2P transport is configured in Settings > Connection and requires a running loca
 Per-tracker proxy rules are configured in the same tab, one per line as
 `tracker URL | proxy URL`. Flux supports `socks5://`, `http://`, and `https://` proxy endpoints;
 configured HTTP(S) tracker announces are routed through the selected proxy and returned peers are
-added to the torrent. UDP trackers remain on libtorrent's direct announce path.
+added to the torrent. UDP trackers remain on libtorrent's direct announce path. Right-click any
+tracker in the detail panel to run a one-shot announce test and inspect its response class and peer
+counts.
 
 ## Usage
 

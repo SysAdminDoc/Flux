@@ -80,6 +80,7 @@ class SessionWorker(QObject):
     detail_updated = pyqtSignal(object)   # DetailData
     peer_banned = pyqtSignal(str, str)
     magnet_uri_ready = pyqtSignal(str)    # magnet URI string
+    tracker_tested = pyqtSignal(str, str, object)  # hash, URL, result payload
     started = pyqtSignal()
     stopped = pyqtSignal()
 
@@ -474,6 +475,21 @@ class SessionWorker(QObject):
         if t:
             self._tracker_proxy_manager.forget_tracker(info_hash, url)
             t.remove_tracker(url)
+
+    @pyqtSlot(str, str)
+    def test_tracker(self, info_hash: str, url: str):
+        """Run one synthetic announce without changing torrent state."""
+        t = self._torrents.get(info_hash)
+        if not t or not self._session:
+            self.tracker_tested.emit(
+                info_hash, url,
+                {"ok": False, "error_class": "Session", "message": "Torrent is unavailable"},
+            )
+            return
+        result = self._tracker_proxy_manager.test_announce(
+            t, url, self._session, int(self._cfg.get("listen_port", 6881) or 0)
+        )
+        self.tracker_tested.emit(info_hash, url, result)
 
     @pyqtSlot(str)
     def request_magnet_uri(self, info_hash: str):
