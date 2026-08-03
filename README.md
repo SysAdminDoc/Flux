@@ -57,6 +57,8 @@ A clean, fast, privacy-focused BitTorrent client built with Python, PyQt6, and l
   JSON payloads
 - **RSS episode automation** - match `S01E05`/`1x05` releases with per-show quality and group
   rules, plus optional TMDB/TVDB title lookup
+- **Cross-seed helper** - scan torrent metadata, compare info hashes/piece hashes, and verify
+  candidates against a downloaded library before reusing content
 
 ## Requirements
 
@@ -100,6 +102,9 @@ RSS feeds are managed from Tools > RSS Feed Manager. A feed can use a JSON show-
 aliases, season/episode constraints, resolution and codec requirements, and a release-group
 allowlist. TMDB or TVDB credentials are optional; the Lookup button runs the selected provider in
 the RSS worker and stores the chosen show identity in the rule.
+Tools > Cross-seed Helper scans a metadata folder in the background. Exact info-hash and piece-hash
+matches are high-confidence; file-list/piece-size matches are shown as lower-confidence candidates.
+Optionally select the downloaded library to verify v1 piece hashes before acting on a candidate.
 
 ## Usage
 

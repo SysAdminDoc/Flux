@@ -20,6 +20,8 @@ All notable changes to Flux will be documented in this file.
 - Added Behavior settings for asynchronous lifecycle script hooks with JSON payload delivery.
 - Added RSS episode parsing for `S01E05`/`1x05` releases, per-show quality/group rules, persisted
   feed definitions, and optional asynchronous TMDB/TVDB lookup.
+- Added a background Cross-seed Helper with info-hash, piece-hash, piece-size, and optional library
+  verification matching.
 
 ## [v0.1.0] - %Y->- (HEAD -> main, origin/main, origin/HEAD)
 

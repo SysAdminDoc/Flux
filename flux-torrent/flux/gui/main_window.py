@@ -35,6 +35,7 @@ from flux.gui.dialogs.add_torrent import AddTorrentDialog
 from flux.gui.dialogs.settings_dialog import SettingsDialog
 from flux.gui.dialogs.create_torrent import CreateTorrentDialog
 from flux.gui.dialogs.rss_manager import RSSManagerDialog
+from flux.gui.dialogs.cross_seed import CrossSeedDialog
 from flux.gui.themes import get_stylesheet, get_palette, set_current as set_theme, c as tc
 from flux.utils.formatters import format_speed, format_bytes
 
@@ -190,6 +191,9 @@ class MainWindow(QMainWindow):
 
         rss_action = tools_menu.addAction("&RSS Feed Manager...")
         rss_action.triggered.connect(self._on_open_rss_manager)
+
+        cross_seed_action = tools_menu.addAction("&Cross-seed Helper...")
+        cross_seed_action.triggered.connect(self._on_open_cross_seed)
 
         # --- Help ---
         help_menu = menubar.addMenu("&Help")
@@ -733,6 +737,11 @@ class MainWindow(QMainWindow):
             self._rss_monitor.new_torrent.connect(self._on_rss_new_torrent)
         dlg = RSSManagerDialog(self._rss_monitor, self)
         dlg.feeds_changed.connect(self._save_rss_config)
+        dlg.exec()
+
+    def _on_open_cross_seed(self):
+        default_path = self._settings.get("default_save_path", "")
+        dlg = CrossSeedDialog(default_path, self)
         dlg.exec()
 
     def _save_rss_config(self):
