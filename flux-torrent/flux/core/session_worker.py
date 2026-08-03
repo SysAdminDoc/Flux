@@ -29,7 +29,12 @@ from flux.core.settings import (
     build_tracker_proxy_rules,
     build_label_automation_rules,
 )
-from flux.core.automation import ensure_move_path, label_rule_for, parse_label_rules
+from flux.core.automation import (
+    ensure_move_path,
+    label_rule_for,
+    parse_label_rules,
+    should_auto_delete,
+)
 from flux.core.peer_filter import PeerFilter
 from flux.core.script_hooks import ScriptHookRunner
 from flux.core.tracker_proxy import TrackerProxyManager
@@ -875,12 +880,15 @@ class SessionWorker(QObject):
 
         # Snapshot all torrents
         snapshots = []
+        auto_delete_hashes = []
         for torrent in self._torrents.values():
             try:
                 snap = torrent.snapshot()
                 torrent.record_speed()
                 self._enforce_label_ratio(torrent, snap)
                 snapshots.append(snap)
+                if should_auto_delete(snap, self._cfg):
+                    auto_delete_hashes.append(snap.info_hash)
             except Exception:
                 pass
 
@@ -914,6 +922,11 @@ class SessionWorker(QObject):
                     self.detail_updated.emit(detail)
                 except Exception as e:
                     logger.debug(f"Detail data error: {e}")
+
+        for info_hash in auto_delete_hashes:
+            self.remove_torrent(
+                info_hash, bool(self._cfg.get("auto_delete_files", True))
+            )
 
     # --- Internal: Bandwidth schedule ---
 

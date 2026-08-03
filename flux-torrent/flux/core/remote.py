@@ -509,6 +509,7 @@ def _torrent_payload(snap: Any) -> dict[str, Any]:
         "seeds": int(getattr(snap, "num_seeds", 0) or 0),
         "peers": int(getattr(snap, "num_peers", 0) or 0),
         "ratio": float(getattr(snap, "ratio", 0.0) or 0.0),
+        "seeding_time": int(getattr(snap, "seeding_time", 0) or 0),
         "eta": int(getattr(snap, "eta", 0) or 0),
         "category": str(getattr(snap, "category", "") or ""),
         "tags": list(getattr(snap, "tags", []) or []),

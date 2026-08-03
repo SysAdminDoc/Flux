@@ -14,6 +14,8 @@ All notable changes to Flux will be documented in this file.
 - Added a tracker-table announce test action for direct HTTP(S)/UDP and configured proxy routes.
 - Added category/tag-scoped label automation for completion moves, tracker overrides, ratio limits,
   and upload limits.
+- Added conditional auto-delete with ratio/seed-age OR thresholds, label exclusion, and optional
+  file deletion.
 
 ## [v0.1.0] - %Y->- (HEAD -> main, origin/main, origin/HEAD)
 

@@ -51,6 +51,11 @@ class Settings:
         "max_ratio": 2.0,
         "max_seed_time": 0,  # 0 = unlimited (minutes)
         "ratio_action": 0,  # 0=pause, 1=remove
+        "auto_delete_enabled": False,
+        "auto_delete_ratio": 0.0,
+        "auto_delete_seed_days": 0.0,
+        "auto_delete_exclude_label": "archive",
+        "auto_delete_files": True,
         # Paths
         "default_save_path": str(Path.home() / "Downloads"),
         "temp_path_enabled": False,

@@ -513,6 +513,7 @@ def _snapshot_from_payload(item: dict[str, Any]) -> TorrentSnapshot:
         num_seeds=_as_int(item.get("seeds")),
         num_peers=_as_int(item.get("peers")),
         ratio=_as_float(item.get("ratio")),
+        seeding_time=_as_int(item.get("seeding_time")),
         eta=_as_int(item.get("eta")),
         error=str(item.get("error", "") or ""),
         category=str(item.get("category", "") or ""),

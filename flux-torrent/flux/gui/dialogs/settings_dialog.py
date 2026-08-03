@@ -459,6 +459,41 @@ class SettingsDialog(QDialog):
         label_layout.addWidget(label_rules)
         layout.addWidget(label_group)
 
+        auto_delete_group = QGroupBox("Conditional auto-delete")
+        auto_delete_layout = QGridLayout(auto_delete_group)
+        auto_delete_layout.setSpacing(8)
+        enabled = QCheckBox("Delete completed torrents when either limit is reached")
+        self._widgets["auto_delete_enabled"] = enabled
+        auto_delete_layout.addWidget(enabled, 0, 0, 1, 4)
+
+        auto_delete_layout.addWidget(QLabel("Ratio at least:"), 1, 0)
+        ratio = QDoubleSpinBox()
+        ratio.setRange(0, 100)
+        ratio.setDecimals(2)
+        ratio.setSingleStep(0.1)
+        ratio.setSpecialValueText("Disabled")
+        self._widgets["auto_delete_ratio"] = ratio
+        auto_delete_layout.addWidget(ratio, 1, 1)
+
+        auto_delete_layout.addWidget(QLabel("Seeded days:"), 1, 2)
+        seed_days = QDoubleSpinBox()
+        seed_days.setRange(0, 999999)
+        seed_days.setDecimals(1)
+        seed_days.setSingleStep(1)
+        seed_days.setSpecialValueText("Disabled")
+        self._widgets["auto_delete_seed_days"] = seed_days
+        auto_delete_layout.addWidget(seed_days, 1, 3)
+
+        auto_delete_layout.addWidget(QLabel("Exclude label:"), 2, 0)
+        exclude = QLineEdit()
+        self._widgets["auto_delete_exclude_label"] = exclude
+        auto_delete_layout.addWidget(exclude, 2, 1, 1, 3)
+
+        delete_files = QCheckBox("Also delete downloaded files")
+        self._widgets["auto_delete_files"] = delete_files
+        auto_delete_layout.addWidget(delete_files, 3, 0, 1, 4)
+        layout.addWidget(auto_delete_group)
+
         layout.addStretch()
         return page
 
@@ -693,6 +728,13 @@ class SettingsDialog(QDialog):
         self._widgets["label_rules"].setPlainText(json.dumps(
             s.get("label_rules", []) or [], indent=2
         ))
+        self._widgets["auto_delete_enabled"].setChecked(s.get("auto_delete_enabled", False))
+        self._widgets["auto_delete_ratio"].setValue(s.get("auto_delete_ratio", 0.0))
+        self._widgets["auto_delete_seed_days"].setValue(s.get("auto_delete_seed_days", 0.0))
+        self._widgets["auto_delete_exclude_label"].setText(
+            s.get("auto_delete_exclude_label", "archive")
+        )
+        self._widgets["auto_delete_files"].setChecked(s.get("auto_delete_files", True))
 
         # Remote
         self._widgets["remote_enabled"].setChecked(s.get("remote_enabled", False))
@@ -791,6 +833,11 @@ class SettingsDialog(QDialog):
         except json.JSONDecodeError:
             label_rules = s.get("label_rules", []) or []
         s.set("label_rules", build_label_automation_rules({"label_rules": label_rules}))
+        s.set("auto_delete_enabled", self._widgets["auto_delete_enabled"].isChecked())
+        s.set("auto_delete_ratio", self._widgets["auto_delete_ratio"].value())
+        s.set("auto_delete_seed_days", self._widgets["auto_delete_seed_days"].value())
+        s.set("auto_delete_exclude_label", self._widgets["auto_delete_exclude_label"].text().strip())
+        s.set("auto_delete_files", self._widgets["auto_delete_files"].isChecked())
 
         # Remote
         s.set("remote_enabled", self._widgets["remote_enabled"].isChecked())

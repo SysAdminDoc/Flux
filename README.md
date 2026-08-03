@@ -82,6 +82,9 @@ counts.
 Label automation rules are configured in Settings > Behavior as a JSON array. Each rule uses a
 `label` matching a category or tag and can set `move_completed_path`, `tracker_overrides`,
 `ratio_limit`, and `upload_limit` (bytes/s).
+Conditional auto-delete is separately configurable in Settings > Behavior. It uses an OR between
+the ratio and seeded-days thresholds, skips the configured exclusion label (default `archive`),
+and can remove the downloaded files with the torrent.
 
 ## Usage
 

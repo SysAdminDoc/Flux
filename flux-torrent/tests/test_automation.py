@@ -3,12 +3,14 @@
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 
 from flux.core.automation import (
     build_label_rules,
     ensure_move_path,
     label_rule_for,
     parse_label_rules,
+    should_auto_delete,
 )
 
 
@@ -47,6 +49,24 @@ class TestLabelAutomation(unittest.TestCase):
             self.assertEqual(ensure_move_path(str(destination)), str(destination))
             self.assertTrue(destination.is_dir())
         self.assertEqual(ensure_move_path(""), "")
+
+    def test_conditional_delete_uses_or_and_respects_archive_exclusion(self):
+        base = SimpleNamespace(progress=1.0, ratio=2.0, seeding_time=0,
+                               category="movies", tags=[])
+        settings = {
+            "auto_delete_enabled": True,
+            "auto_delete_ratio": 2.0,
+            "auto_delete_seed_days": 7,
+            "auto_delete_exclude_label": "archive",
+        }
+        self.assertTrue(should_auto_delete(base, settings))
+        base.ratio = 0.0
+        base.seeding_time = 7 * 86400
+        self.assertTrue(should_auto_delete(base, settings))
+        base.category = "archive"
+        self.assertFalse(should_auto_delete(base, settings))
+        base.progress = 0.5
+        self.assertFalse(should_auto_delete(base, settings))
 
 
 if __name__ == "__main__":

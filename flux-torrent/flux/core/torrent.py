@@ -108,6 +108,7 @@ class TorrentSnapshot:
     num_peers: int = 0
     num_connections: int = 0
     ratio: float = 0.0
+    seeding_time: int = 0
     eta: int = 0
     error: str = ""
     category: str = ""
@@ -215,7 +216,7 @@ class Torrent:
                 download_speed=s.download_rate, upload_speed=s.upload_rate,
                 num_seeds=s.num_seeds, num_peers=s.num_peers,
                 num_connections=s.num_connections,
-                ratio=ratio, eta=eta, error=error,
+                ratio=ratio, seeding_time=int(getattr(s, "seeding_time", 0) or 0), eta=eta, error=error,
                 category=self._category, tags=self._tags[:],
                 added_time=self._added_time,
                 download_limit=dl_limit, upload_limit=ul_limit,

@@ -94,6 +94,40 @@ def label_rule_for(
     return None
 
 
+def label_matches(category: str, tags: list[str] | tuple[str, ...], label: str) -> bool:
+    """Return whether a category or tag exactly matches an exclusion label."""
+    wanted = str(label or "").strip().casefold()
+    if not wanted:
+        return False
+    values = [str(category or "").strip(), *(str(tag).strip() for tag in tags or [])]
+    return any(value and value.casefold() == wanted for value in values)
+
+
+def should_auto_delete(snapshot: Any, values: dict[str, Any]) -> bool:
+    """Evaluate ratio/seed-age deletion without mutating torrent state."""
+    if not bool(values.get("auto_delete_enabled", False)):
+        return False
+    if float(getattr(snapshot, "progress", 0.0) or 0.0) < 0.999:
+        return False
+    if label_matches(
+        getattr(snapshot, "category", ""),
+        getattr(snapshot, "tags", []) or [],
+        str(values.get("auto_delete_exclude_label", "archive") or "archive"),
+    ):
+        return False
+    try:
+        ratio_limit = max(0.0, float(values.get("auto_delete_ratio", 0) or 0))
+    except (TypeError, ValueError):
+        ratio_limit = 0.0
+    try:
+        seed_days = max(0.0, float(values.get("auto_delete_seed_days", 0) or 0))
+    except (TypeError, ValueError):
+        seed_days = 0.0
+    ratio_hit = ratio_limit > 0 and float(getattr(snapshot, "ratio", 0.0) or 0.0) >= ratio_limit
+    seed_hit = seed_days > 0 and int(getattr(snapshot, "seeding_time", 0) or 0) >= seed_days * 86400
+    return ratio_hit or seed_hit
+
+
 def build_label_rules(values: dict[str, Any]) -> list[dict[str, Any]]:
     """Return the canonical persistent shape for the settings dialog."""
     return [rule.to_dict() for rule in parse_label_rules(values.get("label_rules", []))]
