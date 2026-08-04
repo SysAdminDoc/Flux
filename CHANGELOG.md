@@ -4,6 +4,8 @@ All notable changes to Flux will be documented in this file.
 
 ## Unreleased
 
+- Added fuzzy Settings search across tab names, group titles, labels, setting keys, and control
+  placeholders, with matching tabs and groups kept visible while values remain editable.
 - Added a persistent 7 x 24 local-time Activity Heatmap with separate download/upload volume bars
   and a Tools dialog for inspecting hourly traffic totals.
 - Added a bounded per-torrent libtorrent alert buffer and a read-only Log tab in the detail panel;

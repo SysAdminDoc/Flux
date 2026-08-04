@@ -7,7 +7,8 @@ from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QTabWidget, QWidget,
     QLabel, QLineEdit, QSpinBox, QDoubleSpinBox, QCheckBox,
     QComboBox, QPushButton, QGroupBox, QGridLayout, QFileDialog,
-    QRadioButton, QButtonGroup, QFrame, QPlainTextEdit, QScrollArea
+    QRadioButton, QButtonGroup, QFrame, QPlainTextEdit, QScrollArea,
+    QAbstractButton,
 )
 
 from flux.core.settings import (
@@ -15,6 +16,45 @@ from flux.core.settings import (
     build_label_automation_rules,
     build_torrent_schedule_settings,
 )
+
+
+def _search_text(value: str) -> str:
+    return " ".join(
+        str(value or "")
+        .casefold()
+        .replace("_", " ")
+        .replace("-", " ")
+        .split()
+    )
+
+
+def _is_subsequence(needle: str, haystack: str) -> bool:
+    compact_needle = "".join(char for char in needle if char.isalnum())
+    compact_haystack = "".join(char for char in haystack if char.isalnum())
+    if not compact_needle:
+        return True
+    position = 0
+    for char in compact_needle:
+        position = compact_haystack.find(char, position)
+        if position < 0:
+            return False
+        position += 1
+    return True
+
+
+def fuzzy_match(query: str, text: str) -> bool:
+    """Return whether query matches text by substring or character subsequence."""
+    normalized_query = _search_text(query)
+    normalized_text = _search_text(text)
+    if not normalized_query:
+        return True
+    if normalized_query in normalized_text:
+        return True
+    compact_text = normalized_text.replace(" ", "")
+    compact_query = normalized_query.replace(" ", "")
+    if _is_subsequence(compact_query, compact_text):
+        return True
+    return all(_is_subsequence(token, compact_text) for token in normalized_query.split())
 
 
 class SettingsDialog(QDialog):
@@ -32,13 +72,27 @@ class SettingsDialog(QDialog):
         self.setModal(True)
 
         self._widgets = {}  # key -> widget for reading values
+        self._search_groups = []
         self._setup_ui()
+        self._build_search_index()
         self._load_current()
 
     def _setup_ui(self):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
+
+        search_row = QHBoxLayout()
+        search_row.setContentsMargins(16, 10, 16, 8)
+        search_row.setSpacing(8)
+        search_row.addWidget(QLabel("Search settings:"))
+        self._search_input = QLineEdit()
+        self._search_input.setPlaceholderText("Try \"proxy\", \"upload limit\", or \"remote client\"")
+        self._search_input.setClearButtonEnabled(True)
+        self._search_input.setFixedHeight(30)
+        self._search_input.textChanged.connect(self._on_search_changed)
+        search_row.addWidget(self._search_input, stretch=1)
+        layout.addLayout(search_row)
 
         self._tabs = QTabWidget()
         self._tabs.setDocumentMode(True)
@@ -72,6 +126,66 @@ class SettingsDialog(QDialog):
         btn_layout.addWidget(ok_btn)
 
         layout.addWidget(btn_frame)
+
+    def _build_search_index(self):
+        """Index each top-level setting group without reading user-entered values."""
+        self._search_groups.clear()
+        for tab_index in range(self._tabs.count()):
+            tab_name = self._tabs.tabText(tab_index)
+            page = self._tabs.widget(tab_index)
+            if isinstance(page, QScrollArea):
+                page = page.widget()
+            if page is None:
+                continue
+
+            groups = []
+            for group in page.findChildren(QGroupBox):
+                ancestor = group.parentWidget()
+                nested = False
+                while ancestor is not None and ancestor is not page:
+                    if isinstance(ancestor, QGroupBox):
+                        nested = True
+                        break
+                    ancestor = ancestor.parentWidget()
+                if nested:
+                    continue
+
+                terms = [tab_name, group.title()]
+                for child in group.findChildren(QWidget):
+                    if isinstance(child, QLabel):
+                        terms.append(child.text())
+                    elif isinstance(child, QAbstractButton):
+                        terms.append(child.text())
+                    elif isinstance(child, QLineEdit):
+                        terms.append(child.placeholderText())
+                    elif isinstance(child, QPlainTextEdit):
+                        terms.append(child.placeholderText())
+                    elif isinstance(child, QComboBox):
+                        terms.extend(child.itemText(i) for i in range(child.count()))
+
+                for key, widget in self._widgets.items():
+                    if group.isAncestorOf(widget):
+                        terms.append(key)
+                groups.append((group, terms))
+
+            self._search_groups.append((tab_index, tab_name, groups))
+
+    def _on_search_changed(self, query: str):
+        query = query.strip()
+        visible_tabs = []
+        for tab_index, tab_name, groups in self._search_groups:
+            tab_match = fuzzy_match(query, tab_name)
+            tab_has_match = tab_match
+            for group, terms in groups:
+                group_match = tab_match or any(fuzzy_match(query, term) for term in terms)
+                group.setVisible(not query or group_match)
+                tab_has_match = tab_has_match or group_match
+            self._tabs.setTabVisible(tab_index, not query or tab_has_match)
+            if not query or tab_has_match:
+                visible_tabs.append(tab_index)
+
+        if visible_tabs and not self._tabs.isTabVisible(self._tabs.currentIndex()):
+            self._tabs.setCurrentIndex(visible_tabs[0])
 
     # --- Downloads Tab ---
 

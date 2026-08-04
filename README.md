@@ -63,6 +63,7 @@ A clean, fast, privacy-focused BitTorrent client built with Python, PyQt6, and l
 - **Creation presets** - save named piece-size, tracker, private, comment, and web-seed options
 - **Column profiles** - keep focused Downloading, Seeding, and Completed table layouts
 - **Activity Heatmap** - review accumulated download/upload volume across local weekday/hour cells
+- **Settings search** - fuzzy-filter tabs and setting groups without changing their stored values
 
 ## Requirements
 
@@ -118,6 +119,8 @@ Seeding, Completed, and default sidebar filters. Right-click the header to toggl
 the active profile.
 Tools > Activity Heatmap groups persisted session traffic into a 7 x 24 local-time grid. Each cell
 shows separate download and upload intensity, with hover details for the exact recorded byte totals.
+Settings includes a fuzzy search field above the tabs; matching group titles, labels, setting keys,
+and control placeholders keep only the relevant tabs and groups visible while editing remains intact.
 
 ## Usage
 
