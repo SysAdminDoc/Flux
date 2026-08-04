@@ -540,6 +540,38 @@ class SettingsDialog(QDialog):
 
         layout.addWidget(peer_group)
 
+        reputation_group = QGroupBox("Peer reputation memory")
+        reputation_layout = QGridLayout(reputation_group)
+        reputation_layout.setSpacing(8)
+        reputation_enabled = QCheckBox("Remember repeated peer errors/disconnects across sessions")
+        self._widgets["peer_reputation_enabled"] = reputation_enabled
+        reputation_layout.addWidget(reputation_enabled, 0, 0, 1, 3)
+        reputation_layout.addWidget(QLabel("Deprioritize after score:"), 1, 0)
+        reputation_threshold = QSpinBox()
+        reputation_threshold.setRange(1, 100)
+        self._widgets["peer_reputation_threshold"] = reputation_threshold
+        reputation_layout.addWidget(reputation_threshold, 1, 1)
+        reputation_layout.addWidget(QLabel("Download/upload cap:"), 2, 0)
+        reputation_limit = QSpinBox()
+        reputation_limit.setRange(1, 1024)
+        reputation_limit.setSuffix(" KiB/s")
+        self._widgets["peer_reputation_limit_kib"] = reputation_limit
+        reputation_layout.addWidget(reputation_limit, 2, 1)
+        reputation_layout.addWidget(QLabel("Memory file:"), 3, 0)
+        reputation_path = QLineEdit()
+        reputation_path.setPlaceholderText("Blank = ~/.flux-torrent/peer-reputation.json")
+        self._widgets["peer_reputation_path"] = reputation_path
+        reputation_layout.addWidget(reputation_path, 3, 1)
+        reputation_browse = QPushButton("Browse...")
+        reputation_browse.clicked.connect(lambda: self._browse_save_file(reputation_path))
+        reputation_layout.addWidget(reputation_browse, 3, 2)
+        reputation_hint = QLabel(
+            "Bad events are weighted: disconnect=1, error=3, hash failure=5. Flux limits matching peers instead of banning them."
+        )
+        reputation_hint.setWordWrap(True)
+        reputation_layout.addWidget(reputation_hint, 4, 0, 1, 3)
+        layout.addWidget(reputation_group)
+
         blocklist_group = QGroupBox("IP blocklist")
         blocklist_layout = QGridLayout(blocklist_group)
         blocklist_layout.setSpacing(8)
@@ -1018,6 +1050,18 @@ class SettingsDialog(QDialog):
         self._widgets["auto_ban_xunlei"].setChecked(s.get("auto_ban_xunlei", True))
         self._widgets["auto_ban_qq"].setChecked(s.get("auto_ban_qq", True))
         self._widgets["auto_ban_baidu"].setChecked(s.get("auto_ban_baidu", True))
+        self._widgets["peer_reputation_enabled"].setChecked(
+            s.get("peer_reputation_enabled", True)
+        )
+        self._widgets["peer_reputation_threshold"].setValue(
+            s.get("peer_reputation_threshold", 3)
+        )
+        self._widgets["peer_reputation_limit_kib"].setValue(
+            max(1, int(s.get("peer_reputation_limit", 16384) or 16384) // 1024)
+        )
+        self._widgets["peer_reputation_path"].setText(
+            s.get("peer_reputation_path", "")
+        )
 
         # Behavior
         self._widgets["confirm_on_delete"].setChecked(s.get("confirm_on_delete", True))
@@ -1165,6 +1209,13 @@ class SettingsDialog(QDialog):
         s.set("auto_ban_xunlei", self._widgets["auto_ban_xunlei"].isChecked())
         s.set("auto_ban_qq", self._widgets["auto_ban_qq"].isChecked())
         s.set("auto_ban_baidu", self._widgets["auto_ban_baidu"].isChecked())
+        s.set("peer_reputation_enabled", self._widgets["peer_reputation_enabled"].isChecked())
+        s.set("peer_reputation_threshold", self._widgets["peer_reputation_threshold"].value())
+        s.set(
+            "peer_reputation_limit",
+            self._widgets["peer_reputation_limit_kib"].value() * 1024,
+        )
+        s.set("peer_reputation_path", self._widgets["peer_reputation_path"].text().strip())
 
         # Behavior
         s.set("confirm_on_delete", self._widgets["confirm_on_delete"].isChecked())
@@ -1255,5 +1306,10 @@ class SettingsDialog(QDialog):
 
     def _browse_file_path(self, line_edit: QLineEdit):
         path, _ = QFileDialog.getOpenFileName(self, "Select File", line_edit.text())
+        if path:
+            line_edit.setText(path)
+
+    def _browse_save_file(self, line_edit: QLineEdit):
+        path, _ = QFileDialog.getSaveFileName(self, "Select Memory File", line_edit.text())
         if path:
             line_edit.setText(path)

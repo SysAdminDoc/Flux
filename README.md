@@ -69,6 +69,8 @@ A clean, fast, privacy-focused BitTorrent client built with Python, PyQt6, and l
 - **Settings search** - fuzzy-filter tabs and setting groups without changing their stored values
 - **Ratio milestone notifications** - optionally notify at 1.0, 2.0, or custom ratios with a
   non-mutating suggested next action
+- **Peer reputation memory** - persist weighted peer error/disconnect evidence and apply a low
+  per-peer transfer cap instead of banning repeat offenders
 
 ## Requirements
 
@@ -142,6 +144,10 @@ without replacing the previous sidecar.
 Ratio milestone notifications are configured in Settings > Behavior. They are emitted once as a
 torrent's observed ratio crosses each configured threshold and remain informational: the suggested
 action is shown in the notification, but Flux never pauses or removes a torrent because of it.
+Peer reputation memory is configured in Settings > Connection. It stores bounded counters in an
+atomic JSON file, weighting disconnects, errors, and hash failures separately; peers above the
+configured score are throttled on future connections across sessions rather than added to the IP
+blocklist.
 
 ## Usage
 

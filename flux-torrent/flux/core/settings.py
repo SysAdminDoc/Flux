@@ -92,6 +92,10 @@ class Settings:
         "auto_ban_xunlei": True,
         "auto_ban_qq": True,
         "auto_ban_baidu": True,
+        "peer_reputation_enabled": True,
+        "peer_reputation_threshold": 3,
+        "peer_reputation_limit": 16384,
+        "peer_reputation_path": "",
         "auto_update_trackers": False,
         "tracker_list_url": "https://raw.githubusercontent.com/ngosang/trackerslist/master/trackers_best.txt",
         # UI

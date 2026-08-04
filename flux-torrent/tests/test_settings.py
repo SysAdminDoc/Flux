@@ -36,6 +36,10 @@ class TestSettings(unittest.TestCase):
         self.assertFalse(self.settings.get("ratio_notifications_enabled"))
         self.assertEqual(self.settings.get("ratio_notification_milestones"), [1.0, 2.0])
         self.assertEqual(self.settings.get("ratio_notification_action"), "review")
+        self.assertTrue(self.settings.get("peer_reputation_enabled"))
+        self.assertEqual(self.settings.get("peer_reputation_threshold"), 3)
+        self.assertEqual(self.settings.get("peer_reputation_limit"), 16384)
+        self.assertEqual(self.settings.get("peer_reputation_path"), "")
 
     def test_i2p_settings_are_validated(self):
         self.assertEqual(build_i2p_settings({}), {})

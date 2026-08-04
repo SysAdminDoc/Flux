@@ -532,6 +532,8 @@ class MainWindow(QMainWindow):
         w.stats_updated.connect(self._on_stats_updated)
         w.detail_updated.connect(self._on_detail_updated)
         w.peer_banned.connect(self._on_peer_banned)
+        if hasattr(w, "peer_reputation"):
+            w.peer_reputation.connect(self._on_peer_reputation)
         w.magnet_uri_ready.connect(self._on_magnet_uri_ready)
         if hasattr(w, "tracker_tested"):
             w.tracker_tested.connect(self._on_tracker_tested)
@@ -1231,6 +1233,9 @@ class MainWindow(QMainWindow):
 
     def _on_peer_banned(self, ip, reason):
         self._status_label.setText(f"Banned peer {ip}: {reason}")
+
+    def _on_peer_reputation(self, ip: str, message: str):
+        self._status_label.setText(message)
 
     def _on_vpn_status(self, available: bool, message: str):
         """Flash a safety status without changing focus or user input state."""

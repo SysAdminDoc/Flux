@@ -63,6 +63,7 @@ from flux.core.automation import (
     should_auto_delete,
 )
 from flux.core.peer_filter import PeerFilter
+from flux.core.peer_reputation import PeerReputationStore
 from flux.core.script_hooks import ScriptHookRunner
 from flux.core.tracker_proxy import TrackerProxyManager
 
@@ -187,6 +188,7 @@ class SessionWorker(QObject):
     stats_updated = pyqtSignal(object)    # SessionStats
     detail_updated = pyqtSignal(object)   # DetailData
     peer_banned = pyqtSignal(str, str)
+    peer_reputation = pyqtSignal(str, str)
     magnet_uri_ready = pyqtSignal(str)    # magnet URI string
     tracker_tested = pyqtSignal(str, str, object)  # hash, URL, result payload
     vpn_status = pyqtSignal(bool, str)  # available, user-facing status
@@ -207,6 +209,8 @@ class SessionWorker(QObject):
         self._recheck_fingerprints: Dict[str, tuple[FileFingerprint, ...]] = {}
         self._full_rechecks_pending: set[str] = set()
         self._peer_filter = PeerFilter()
+        self._peer_reputation_path = self._reputation_path(self._cfg)
+        self._peer_reputation = PeerReputationStore(self._peer_reputation_path)
         self._hook_runner = ScriptHookRunner()
         self._hook_runner.configure(self._cfg.get("script_hooks", []))
         self._resume_db: Optional[sqlite3.Connection] = None
@@ -896,6 +900,10 @@ class SessionWorker(QObject):
         settings.update(build_private_tracker_settings(self._cfg))
         self._session.apply_settings(settings)
         self._peer_filter.configure(self._cfg)
+        reputation_path = self._reputation_path(self._cfg)
+        if reputation_path != self._peer_reputation_path:
+            self._peer_reputation_path = reputation_path
+            self._peer_reputation = PeerReputationStore(reputation_path)
         self._hook_runner.configure(self._cfg.get("script_hooks", []))
         self._load_ip_blocklist()
         self._check_blocklist_refresh()
@@ -905,6 +913,92 @@ class SessionWorker(QObject):
             self._tracker_proxy_manager.sync_torrent(torrent)
 
     # --- Internal: Script hooks ---
+
+    @staticmethod
+    def _reputation_path(cfg: dict) -> Path:
+        configured = str(cfg.get("peer_reputation_path", "") or "").strip()
+        return Path(configured) if configured else Path.home() / ".flux-torrent" / "peer-reputation.json"
+
+    @staticmethod
+    def _alert_peer_ip(alert) -> str:
+        try:
+            value = getattr(alert, "ip", None)
+            if isinstance(value, (tuple, list)):
+                return str(value[0])
+            return str(value or "")
+        except Exception:
+            return ""
+
+    def _peer_from_alert(self, alert):
+        handle = getattr(alert, "handle", None)
+        peer_ip = self._alert_peer_ip(alert)
+        if handle is None or not peer_ip:
+            return None
+        try:
+            return next(
+                (peer for peer in handle.get_peer_info() if str(peer.ip[0]) == peer_ip),
+                None,
+            )
+        except Exception:
+            return None
+
+    def _record_peer_reputation_alert(self, alert):
+        if not self._cfg.get("peer_reputation_enabled", True):
+            return
+        alert_name = type(alert).__name__.casefold()
+        if "peer_error" in alert_name:
+            event = "error"
+        elif "peer_disconnected" in alert_name:
+            event = "disconnect"
+        elif "hash_failed" in alert_name:
+            event = "hash_fail"
+        else:
+            return
+        peer = self._peer_from_alert(alert)
+        if peer is None:
+            return
+        peer_ip = str(peer.ip[0])
+        record = self._peer_reputation.record(peer_ip, event, getattr(peer, "client", ""))
+        if record and self._reputation_should_deprioritize(peer_ip):
+            self._deprioritize_peer(getattr(alert, "handle", None), peer)
+
+    def _reputation_should_deprioritize(self, peer_ip: str) -> bool:
+        return self._peer_reputation.should_deprioritize(
+            peer_ip, self._cfg.get("peer_reputation_threshold", 3)
+        )
+
+    def _deprioritize_peer(self, handle, peer) -> bool:
+        if handle is None:
+            return False
+        try:
+            limit = max(1024, int(self._cfg.get("peer_reputation_limit", 16384)))
+        except (TypeError, ValueError):
+            limit = 16384
+        peer_ip = str(peer.ip[0])
+        port = int(peer.ip[1])
+        endpoints = [(peer_ip, port), peer_ip]
+        try:
+            endpoints.insert(0, lt.tcp_endpoint(peer_ip, port))
+        except (AttributeError, TypeError, ValueError):
+            pass
+        applied = False
+        for method_name in ("set_peer_download_limit", "set_peer_upload_limit"):
+            method = getattr(handle, method_name, None)
+            if method is None:
+                continue
+            for endpoint in endpoints:
+                try:
+                    method(endpoint, limit)
+                    applied = True
+                    break
+                except (TypeError, ValueError, RuntimeError):
+                    continue
+        if applied:
+            self.peer_reputation.emit(
+                peer_ip,
+                f"Peer reputation limited {peer_ip} to {limit // 1024} KiB/s",
+            )
+        return applied
 
     def _label_rule(self, torrent: Torrent):
         return label_rule_for(torrent.category, torrent.tags, self._label_rules)
@@ -1222,6 +1316,7 @@ class SessionWorker(QObject):
         for alert in alerts:
             try:
                 self._record_alert_log(alert)
+                self._record_peer_reputation_alert(alert)
                 atype = type(alert)
                 if atype == lt.torrent_finished_alert:
                     if self._cfg.get("integrity_manifest_auto", False):
@@ -1284,6 +1379,10 @@ class SessionWorker(QObject):
                 self.remove_torrent(info_hash)
 
     def _on_peer_connect(self, alert):
+        if self._cfg.get("peer_reputation_enabled", True):
+            peer = self._peer_from_alert(alert)
+            if peer is not None and self._reputation_should_deprioritize(str(peer.ip[0])):
+                self._deprioritize_peer(getattr(alert, "handle", None), peer)
         if not self._peer_filter.enabled:
             return
         try:
