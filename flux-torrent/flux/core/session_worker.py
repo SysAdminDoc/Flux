@@ -66,6 +66,7 @@ from flux.core.peer_filter import PeerFilter
 from flux.core.peer_reputation import PeerReputationStore
 from flux.core.script_hooks import ScriptHookRunner
 from flux.core.tracker_proxy import TrackerProxyManager
+from flux.core.webhooks import build_webhook_request, send_webhook
 
 logger = logging.getLogger(__name__)
 
@@ -200,6 +201,7 @@ class SessionWorker(QObject):
     integrity_ready = pyqtSignal(object)  # (info hash, IntegrityResult)
     integrity_status = pyqtSignal(bool, str)  # success/progress, user-facing status
     ratio_milestone = pyqtSignal(str, float)  # info hash, crossed ratio
+    webhook_status = pyqtSignal(bool, str)  # success, user-facing status
     started = pyqtSignal()
     stopped = pyqtSignal()
 
@@ -244,6 +246,9 @@ class SessionWorker(QObject):
         )
         self._integrity_futures = {}
         self.integrity_ready.connect(self._apply_integrity_result)
+        self._webhook_executor = ThreadPoolExecutor(
+            max_workers=1, thread_name_prefix="FluxWebhook"
+        )
 
         self._focused_hash: str = ""
 
@@ -369,6 +374,7 @@ class SessionWorker(QObject):
 
         self._blocklist_executor.shutdown(wait=True, cancel_futures=True)
         self._integrity_executor.shutdown(wait=True, cancel_futures=True)
+        self._webhook_executor.shutdown(wait=False, cancel_futures=True)
 
         if self._session:
             self._session.pause()
@@ -1033,7 +1039,14 @@ class SessionWorker(QObject):
             logger.info("Label ratio limit reached for %s: %.3f", snap.info_hash, snap.ratio)
 
     def _fire_hook(self, event: str, torrent: Torrent, error: str = ""):
-        """Build torrent info dict and fire script hooks."""
+        """Build torrent info dict and fire script hooks and webhooks."""
+        info = self._torrent_info(torrent, error)
+        self._hook_runner.fire(event, info)
+        self._queue_webhook(event, info)
+
+    @staticmethod
+    def _torrent_info(torrent: Torrent, error: str = "") -> dict:
+        """Create a detached, JSON-safe torrent payload for integrations."""
         snap = torrent.snapshot()
         info = {
             "name": snap.name,
@@ -1049,7 +1062,45 @@ class SessionWorker(QObject):
         }
         if error:
             info["error"] = error
-        self._hook_runner.fire(event, info)
+        return info
+
+    def _queue_webhook(self, event: str, torrent_info: dict):
+        """Queue a configured webhook without blocking the session thread."""
+        if not self._cfg.get("webhook_enabled", False):
+            return
+        events = self._cfg.get("webhook_events", ["on_finish"])
+        if isinstance(events, str):
+            events = [events]
+        if event not in events:
+            return
+        url = str(self._cfg.get("webhook_url", "") or "").strip()
+        if not url:
+            return
+        try:
+            build_webhook_request(url, event, torrent_info)
+        except ValueError as exc:
+            logger.warning("Webhook configuration rejected: %s", exc)
+            self.webhook_status.emit(False, "Webhook URL is invalid")
+            return
+
+        future = self._webhook_executor.submit(send_webhook, url, event, torrent_info)
+        future.add_done_callback(
+            lambda completed: self._finish_webhook(completed, torrent_info.get("name", "Torrent"))
+        )
+
+    def _finish_webhook(self, future, torrent_name: str):
+        """Publish a redacted completion status from the webhook pool."""
+        try:
+            result = future.result()
+        except Exception as exc:
+            logger.warning("Webhook delivery failed: %s", type(exc).__name__)
+            self.webhook_status.emit(False, f"Webhook failed for {torrent_name}")
+            return
+        if result.success:
+            self.webhook_status.emit(True, f"Webhook sent for {torrent_name}")
+        else:
+            logger.warning("Webhook delivery failed: %s", result.error or "request error")
+            self.webhook_status.emit(False, f"Webhook failed for {torrent_name}")
 
     # --- Internal: Resume DB ---
 

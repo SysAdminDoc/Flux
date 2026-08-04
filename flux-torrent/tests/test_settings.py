@@ -40,6 +40,9 @@ class TestSettings(unittest.TestCase):
         self.assertEqual(self.settings.get("peer_reputation_threshold"), 3)
         self.assertEqual(self.settings.get("peer_reputation_limit"), 16384)
         self.assertEqual(self.settings.get("peer_reputation_path"), "")
+        self.assertFalse(self.settings.get("webhook_enabled"))
+        self.assertEqual(self.settings.get("webhook_url"), "")
+        self.assertEqual(self.settings.get("webhook_events"), ["on_finish"])
 
     def test_i2p_settings_are_validated(self):
         self.assertEqual(build_i2p_settings({}), {})

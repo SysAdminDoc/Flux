@@ -14,6 +14,8 @@ All notable changes to Flux will be documented in this file.
   scores and per-peer transfer caps for repeat offenders without automatic IP bans.
 - Added peer-colored piece availability mapping in the Pieces tab, with bounded cross-thread data
   and a legend for connected peers advertising incomplete pieces.
+- Added non-blocking HTTPS completion webhooks for Discord and Telegram, with provider-specific
+  payloads and redacted delivery status.
 - Added conservative smart re-checking: unchanged files skip hashing, changed files validate only
   overlapping v1 pieces, and unsafe or unsupported cases fall back to libtorrent's full verifier.
 - Added scheduled IP blocklist refresh with HTTP(S) mirror failover, bounded parsing, gzip support,

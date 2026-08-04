@@ -1,6 +1,6 @@
 # Flux Torrent Client
 
-![License](https://img.shields.io/badge/license-MIT-green) ![Platform](https://img.shields.io/badge/platform-PowerShell-lightgrey)
+![Version](https://img.shields.io/badge/version-1.0.0-blue) ![License](https://img.shields.io/badge/license-MIT-green) ![Platform](https://img.shields.io/badge/platform-PowerShell-lightgrey)
 
 A clean, fast, privacy-focused BitTorrent client built with Python, PyQt6, and libtorrent.
 
@@ -72,6 +72,7 @@ A clean, fast, privacy-focused BitTorrent client built with Python, PyQt6, and l
 - **Peer reputation memory** - persist weighted peer error/disconnect evidence and apply a low
   per-peer transfer cap instead of banning repeat offenders
 - **Peer-colored piece map** - show which connected peers advertise each incomplete piece
+- **Completion webhooks** - send provider-aware HTTPS notifications to Discord or Telegram
 
 ## Requirements
 
@@ -152,6 +153,9 @@ blocklist.
 The Pieces tab also colors incomplete pieces by the first of up to twelve connected peers that
 advertises them; completed pieces retain the green completion color and the legend identifies each
 peer color.
+Completion webhooks are configured in Settings > Behavior. Paste a Discord webhook URL or a full
+Telegram `sendMessage` URL (including `chat_id`); Flux accepts HTTPS endpoints only and sends from a
+background worker so a slow provider cannot interrupt transfers.
 
 ## Usage
 

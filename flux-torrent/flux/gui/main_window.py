@@ -547,6 +547,8 @@ class MainWindow(QMainWindow):
             w.integrity_status.connect(self._on_integrity_status)
         if hasattr(w, "ratio_milestone"):
             w.ratio_milestone.connect(self._on_ratio_milestone)
+        if hasattr(w, "webhook_status"):
+            w.webhook_status.connect(self._on_webhook_status)
 
         # Remote API -> worker
         self.remote_add_magnet_requested.connect(w.add_magnet)
@@ -1116,6 +1118,10 @@ class MainWindow(QMainWindow):
 
     def _on_torrent_error(self, info_hash, msg):
         self._status_label.setText(f"Error: {msg}")
+
+    def _on_webhook_status(self, success: bool, message: str):
+        """Surface webhook delivery without exposing endpoint credentials."""
+        self._status_label.setText(message if success else f"{message} (check Settings)")
 
     def _on_ratio_milestone(self, info_hash: str, milestone: float):
         """Show an informational tray notification without changing torrent state."""

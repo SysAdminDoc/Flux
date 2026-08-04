@@ -685,6 +685,25 @@ class SettingsDialog(QDialog):
         ratio_notification_layout.addWidget(ratio_hint, 3, 0, 1, 3)
         layout.addWidget(ratio_notification_group)
 
+        webhook_group = QGroupBox("Completion webhooks")
+        webhook_layout = QGridLayout(webhook_group)
+        webhook_layout.setSpacing(8)
+        webhook_enabled = QCheckBox("Send a notification when a torrent completes")
+        self._widgets["webhook_enabled"] = webhook_enabled
+        webhook_layout.addWidget(webhook_enabled, 0, 0, 1, 3)
+        webhook_layout.addWidget(QLabel("Discord or Telegram URL:"), 1, 0)
+        webhook_url = QLineEdit()
+        webhook_url.setEchoMode(QLineEdit.EchoMode.Password)
+        webhook_url.setPlaceholderText("https://discord.com/api/webhooks/... or Telegram sendMessage URL")
+        self._widgets["webhook_url"] = webhook_url
+        webhook_layout.addWidget(webhook_url, 1, 1, 1, 2)
+        webhook_hint = QLabel(
+            "HTTPS only. Telegram URLs must include the bot token and chat_id; the URL stays local and is never logged."
+        )
+        webhook_hint.setWordWrap(True)
+        webhook_layout.addWidget(webhook_hint, 2, 0, 1, 3)
+        layout.addWidget(webhook_group)
+
         # Trackers
         tracker_group = QGroupBox("Trackers")
         trg = QVBoxLayout(tracker_group)
@@ -1081,6 +1100,8 @@ class SettingsDialog(QDialog):
         action_key = s.get("ratio_notification_action", "review")
         action_index = ratio_action.findData(action_key)
         ratio_action.setCurrentIndex(max(0, action_index))
+        self._widgets["webhook_enabled"].setChecked(s.get("webhook_enabled", False))
+        self._widgets["webhook_url"].setText(s.get("webhook_url", ""))
         self._widgets["auto_update_trackers"].setChecked(s.get("auto_update_trackers", False))
         self._widgets["tracker_list_url"].setText(s.get("tracker_list_url", ""))
         self._widgets["label_rules"].setPlainText(json.dumps(
@@ -1237,6 +1258,8 @@ class SettingsDialog(QDialog):
             "ratio_notification_action",
             self._widgets["ratio_notification_action"].currentData() or "review",
         )
+        s.set("webhook_enabled", self._widgets["webhook_enabled"].isChecked())
+        s.set("webhook_url", self._widgets["webhook_url"].text().strip())
         s.set("auto_update_trackers", self._widgets["auto_update_trackers"].isChecked())
         s.set("tracker_list_url", self._widgets["tracker_list_url"].text())
         try:

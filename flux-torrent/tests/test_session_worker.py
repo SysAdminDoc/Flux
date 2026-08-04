@@ -71,6 +71,22 @@ class TestRatioMilestoneEmission(unittest.TestCase):
         worker.shutdown()
 
 
+class TestWebhookQueue(unittest.TestCase):
+    def test_invalid_webhook_is_rejected_before_background_submission(self):
+        worker = SessionWorker({
+            "webhook_enabled": True,
+            "webhook_url": "http://discord.com/api/webhooks/id/token",
+            "webhook_events": ["on_finish"],
+        })
+        emitted = []
+        worker.webhook_status.connect(lambda success, message: emitted.append((success, message)))
+
+        worker._queue_webhook("on_finish", {"name": "Done"})
+
+        self.assertEqual(emitted, [(False, "Webhook URL is invalid")])
+        worker.shutdown()
+
+
 class TestDetailData(unittest.TestCase):
     """Test DetailData dataclass."""
 
