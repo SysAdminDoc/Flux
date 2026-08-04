@@ -14,6 +14,7 @@ import json
 import time
 import sqlite3
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Optional, Dict
 from datetime import datetime
@@ -25,6 +26,13 @@ from PyQt6.QtCore import QObject, QTimer, pyqtSignal, pyqtSlot, QThread, QMetaOb
 from flux.core.torrent import Torrent, get_info_hashes
 from flux.core.activity_heatmap import normalize_heatmap, record_activity
 from flux.core.vpn_binding import build_listen_interfaces, is_bind_address_available
+from flux.core.blocklist import (
+    BlocklistFetchResult,
+    fetch_blocklist,
+    normalize_blocklist_urls,
+    parse_blocklist_ranges,
+    write_blocklist_cache,
+)
 from flux.core.settings import (
     Settings,
     build_i2p_settings,
@@ -169,6 +177,8 @@ class SessionWorker(QObject):
     magnet_uri_ready = pyqtSignal(str)    # magnet URI string
     tracker_tested = pyqtSignal(str, str, object)  # hash, URL, result payload
     vpn_status = pyqtSignal(bool, str)  # available, user-facing status
+    blocklist_ready = pyqtSignal(object)  # BlocklistFetchResult
+    blocklist_status = pyqtSignal(bool, str)  # success, user-facing status
     started = pyqtSignal()
     stopped = pyqtSignal()
 
@@ -182,6 +192,7 @@ class SessionWorker(QObject):
         self._hook_runner.configure(self._cfg.get("script_hooks", []))
         self._resume_db: Optional[sqlite3.Connection] = None
         self._ip_filter: Optional[lt.ip_filter] = None
+        self._dynamic_banned_ips: set[str] = set()
         self._tracker_proxy_manager = TrackerProxyManager()
         self._label_rules = ()
         self._torrent_schedules = {}
@@ -195,6 +206,13 @@ class SessionWorker(QObject):
         self._vpn_bind_address = str(self._cfg.get("vpn_bind_address", "") or "").strip()
         self._vpn_kill_switch = bool(self._cfg.get("vpn_kill_switch", False))
         self._vpn_available: bool | None = None
+        self._blocklist_executor = ThreadPoolExecutor(
+            max_workers=1, thread_name_prefix="FluxBlocklist"
+        )
+        self._blocklist_future = None
+        self._blocklist_next_refresh_at = time.monotonic()
+        self._blocklist_refresh_generation = 0
+        self.blocklist_ready.connect(self._apply_blocklist_result)
 
         self._focused_hash: str = ""
 
@@ -297,6 +315,7 @@ class SessionWorker(QObject):
         self._schedule_timer = QTimer(self)
         self._schedule_timer.timeout.connect(self._check_bandwidth_schedule)
         self._schedule_timer.start(60000)
+        self._check_blocklist_refresh()
 
         logger.info(f"SessionWorker started on port {self._cfg.get('listen_port', 6881)}")
         self.started.emit()
@@ -316,6 +335,8 @@ class SessionWorker(QObject):
             self._schedule_timer.stop()
 
         self._tracker_proxy_manager.close()
+
+        self._blocklist_executor.shutdown(wait=True, cancel_futures=True)
 
         if self._session:
             self._session.pause()
@@ -629,6 +650,8 @@ class SessionWorker(QObject):
             ).strip()
             self._vpn_kill_switch = bool(self._cfg.get("vpn_kill_switch", False))
             self._vpn_available = None
+            self._blocklist_next_refresh_at = time.monotonic()
+            self._blocklist_refresh_generation += 1
             self._tracker_proxy_manager.configure(build_tracker_proxy_rules(self._cfg))
             self._label_rules = parse_label_rules(build_label_automation_rules(self._cfg))
             self._torrent_schedules = parse_torrent_schedules(
@@ -654,6 +677,7 @@ class SessionWorker(QObject):
         self._peer_filter.configure(self._cfg)
         self._hook_runner.configure(self._cfg.get("script_hooks", []))
         self._load_ip_blocklist()
+        self._check_blocklist_refresh()
         for torrent in self._torrents.values():
             _apply_private_tracker_profile(torrent, self._cfg)
             self._apply_label_rule(torrent)
@@ -860,31 +884,97 @@ class SessionWorker(QObject):
     def _load_ip_blocklist(self):
         blocklist_path = self._cfg.get("ip_blocklist_path", "")
         if not blocklist_path or not os.path.isfile(blocklist_path):
-            return
+            return 0
         try:
-            count = 0
-            with open(blocklist_path, 'r', errors='ignore') as f:
-                for line in f:
-                    line = line.strip()
-                    if not line or line.startswith('#'):
-                        continue
-                    if ':' in line and '-' in line:
-                        parts = line.rsplit(':', 1)
-                        if len(parts) == 2:
-                            ip_range = parts[1].strip()
-                            if '-' in ip_range:
-                                start, end = ip_range.split('-', 1)
-                                self._ip_filter.add_rule(start.strip(), end.strip(), 1)
-                                count += 1
-                    elif '-' in line:
-                        start, end = line.split('-', 1)
-                        self._ip_filter.add_rule(start.strip(), end.strip(), 1)
-                        count += 1
-            if count > 0:
-                self._session.set_ip_filter(self._ip_filter)
-                logger.info(f"Loaded {count} IP blocklist entries")
+            with open(blocklist_path, "r", errors="ignore") as blocklist_file:
+                ranges = parse_blocklist_ranges(blocklist_file.read())
+            count = self._apply_ip_filter_ranges(ranges, blocklist_path)
+            return count
         except Exception as e:
             logger.error(f"Failed to load IP blocklist: {e}")
+            return 0
+
+    def _apply_ip_filter_ranges(self, ranges, source: str = "") -> int:
+        """Replace the active filter only after a complete range set is ready."""
+        if not self._session:
+            return 0
+        try:
+            new_filter = lt.ip_filter()
+            for start, end in ranges:
+                new_filter.add_rule(start, end, 1)
+            for ip in sorted(self._dynamic_banned_ips):
+                new_filter.add_rule(ip, ip, 1)
+            self._ip_filter = new_filter
+            self._session.set_ip_filter(new_filter)
+            count = len(ranges)
+            if count:
+                logger.info("Loaded %d IP blocklist entries%s", count, f" from {source}" if source else "")
+            return count
+        except Exception as exc:
+            logger.error("Failed to apply IP blocklist: %s", exc)
+            return 0
+
+    def _check_blocklist_refresh(self):
+        """Submit one scheduled mirror refresh without blocking the session thread."""
+        if not self._cfg.get("ip_blocklist_auto_refresh", False):
+            return
+        urls = normalize_blocklist_urls(self._cfg.get("ip_blocklist_urls", []))
+        if not urls or self._blocklist_future is not None:
+            return
+        if time.monotonic() < self._blocklist_next_refresh_at:
+            return
+        try:
+            refresh_hours = max(1, int(self._cfg.get("ip_blocklist_refresh_hours", 24) or 24))
+        except (TypeError, ValueError):
+            refresh_hours = 24
+        self._blocklist_next_refresh_at = time.monotonic() + refresh_hours * 3600
+        try:
+            generation = self._blocklist_refresh_generation
+            self._blocklist_future = self._blocklist_executor.submit(fetch_blocklist, urls)
+            self._blocklist_future.add_done_callback(
+                lambda future, generation=generation: self._blocklist_fetch_done(
+                    future, generation
+                )
+            )
+        except Exception as exc:
+            self._blocklist_future = None
+            self.blocklist_status.emit(False, f"IP blocklist refresh failed: {exc}")
+
+    def _blocklist_fetch_done(self, future, generation):
+        """Forward a background fetch result back to the worker thread."""
+        try:
+            result = future.result()
+        except Exception as exc:
+            result = BlocklistFetchResult(success=False, error=str(exc))
+        self.blocklist_ready.emit((generation, result))
+
+    @pyqtSlot(object)
+    def _apply_blocklist_result(self, payload):
+        if isinstance(payload, tuple) and len(payload) == 2:
+            generation, result = payload
+        else:
+            generation, result = self._blocklist_refresh_generation, payload
+        if generation != self._blocklist_refresh_generation:
+            self._blocklist_future = None
+            return
+        self._blocklist_future = None
+        if not result.success:
+            self.blocklist_status.emit(False, f"IP blocklist refresh failed: {result.error}")
+            return
+        count = self._apply_ip_filter_ranges(result.ranges, result.source)
+        if count <= 0:
+            self.blocklist_status.emit(False, "IP blocklist refresh returned no usable ranges")
+            return
+        cache_path = str(self._cfg.get("ip_blocklist_path", "") or "").strip()
+        if cache_path:
+            try:
+                write_blocklist_cache(result.content, cache_path)
+            except OSError as exc:
+                logger.warning("Could not cache IP blocklist: %s", exc)
+        self.blocklist_status.emit(
+            True,
+            f"IP blocklist updated from {result.source} ({count} ranges)",
+        )
 
     # --- Internal: Alert processing ---
 
@@ -970,6 +1060,7 @@ class SessionWorker(QObject):
                         should_ban, reason = self._peer_filter.check_peer(
                             peer.pid, peer.client, peer.ip[0])
                         if should_ban:
+                            self._dynamic_banned_ips.add(peer.ip[0])
                             self._ip_filter.add_rule(peer.ip[0], peer.ip[0], 1)
                             self._session.set_ip_filter(self._ip_filter)
                             self.peer_banned.emit(peer.ip[0], reason)
@@ -1116,6 +1207,7 @@ class SessionWorker(QObject):
     # --- Internal: Bandwidth schedule ---
 
     def _check_bandwidth_schedule(self):
+        self._check_blocklist_refresh()
         self._check_torrent_schedules()
         schedule = self._cfg.get("bandwidth_schedule", None)
         if not schedule or not isinstance(schedule, dict):

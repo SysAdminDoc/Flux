@@ -2,7 +2,7 @@
 
 import json
 
-from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QTabWidget, QWidget,
     QLabel, QLineEdit, QSpinBox, QDoubleSpinBox, QCheckBox,
@@ -16,6 +16,7 @@ from flux.core.settings import (
     build_label_automation_rules,
     build_torrent_schedule_settings,
 )
+from flux.core.blocklist import normalize_blocklist_urls
 
 
 def _search_text(value: str) -> str:
@@ -538,6 +539,45 @@ class SettingsDialog(QDialog):
 
         layout.addWidget(peer_group)
 
+        blocklist_group = QGroupBox("IP blocklist")
+        blocklist_layout = QGridLayout(blocklist_group)
+        blocklist_layout.setSpacing(8)
+
+        blocklist_enabled = QCheckBox("Refresh automatically on a schedule")
+        self._widgets["ip_blocklist_auto_refresh"] = blocklist_enabled
+        blocklist_layout.addWidget(blocklist_enabled, 0, 0, 1, 3)
+
+        blocklist_layout.addWidget(QLabel("Cache file:"), 1, 0)
+        blocklist_path = QLineEdit()
+        blocklist_path.setPlaceholderText("Optional local blocklist or refresh cache")
+        self._widgets["ip_blocklist_path"] = blocklist_path
+        blocklist_layout.addWidget(blocklist_path, 1, 1)
+        blocklist_browse = QPushButton("Browse...")
+        blocklist_browse.clicked.connect(lambda: self._browse_file_path(blocklist_path))
+        blocklist_layout.addWidget(blocklist_browse, 1, 2)
+
+        blocklist_layout.addWidget(QLabel("Mirrors (one per line):"), 2, 0, Qt.AlignmentFlag.AlignTop)
+        blocklist_urls = QPlainTextEdit()
+        blocklist_urls.setPlaceholderText("https://mirror.example/blocklist.p2p")
+        blocklist_urls.setMaximumHeight(85)
+        self._widgets["ip_blocklist_urls"] = blocklist_urls
+        blocklist_layout.addWidget(blocklist_urls, 2, 1, 1, 2)
+
+        blocklist_layout.addWidget(QLabel("Refresh interval:"), 3, 0)
+        blocklist_hours = QSpinBox()
+        blocklist_hours.setRange(1, 720)
+        blocklist_hours.setSuffix(" hours")
+        self._widgets["ip_blocklist_refresh_hours"] = blocklist_hours
+        blocklist_layout.addWidget(blocklist_hours, 3, 1)
+        blocklist_layout.addWidget(QLabel("Mirrors are tried in order; a failed refresh keeps the last cache."), 3, 2)
+
+        blocklist_hint = QLabel(
+            "Each successful download replaces the active filter atomically. Only HTTP(S) mirrors are accepted."
+        )
+        blocklist_hint.setWordWrap(True)
+        blocklist_layout.addWidget(blocklist_hint, 4, 0, 1, 3)
+        layout.addWidget(blocklist_group)
+
         layout.addStretch()
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
@@ -888,6 +928,18 @@ class SettingsDialog(QDialog):
         self._widgets["natpmp_enabled"].setChecked(s.get("natpmp_enabled", True))
         self._widgets["vpn_bind_address"].setText(s.get("vpn_bind_address", ""))
         self._widgets["vpn_kill_switch"].setChecked(s.get("vpn_kill_switch", False))
+        self._widgets["ip_blocklist_path"].setText(s.get("ip_blocklist_path", ""))
+        self._widgets["ip_blocklist_auto_refresh"].setChecked(
+            s.get("ip_blocklist_auto_refresh", False)
+        )
+        self._widgets["ip_blocklist_urls"].setPlainText("\n".join(
+            normalize_blocklist_urls(s.get("ip_blocklist_urls", []))
+        ))
+        try:
+            blocklist_hours = int(s.get("ip_blocklist_refresh_hours", 24) or 24)
+        except (TypeError, ValueError):
+            blocklist_hours = 24
+        self._widgets["ip_blocklist_refresh_hours"].setValue(blocklist_hours)
         self._widgets["i2p_enabled"].setChecked(s.get("i2p_enabled", False))
         self._widgets["i2p_hostname"].setText(s.get("i2p_hostname", "127.0.0.1"))
         self._widgets["i2p_port"].setValue(s.get("i2p_port", 7656))
@@ -1010,6 +1062,19 @@ class SettingsDialog(QDialog):
         s.set("natpmp_enabled", self._widgets["natpmp_enabled"].isChecked())
         s.set("vpn_bind_address", self._widgets["vpn_bind_address"].text().strip())
         s.set("vpn_kill_switch", self._widgets["vpn_kill_switch"].isChecked())
+        s.set("ip_blocklist_path", self._widgets["ip_blocklist_path"].text().strip())
+        s.set(
+            "ip_blocklist_auto_refresh",
+            self._widgets["ip_blocklist_auto_refresh"].isChecked(),
+        )
+        s.set(
+            "ip_blocklist_urls",
+            normalize_blocklist_urls(self._widgets["ip_blocklist_urls"].toPlainText()),
+        )
+        s.set(
+            "ip_blocklist_refresh_hours",
+            self._widgets["ip_blocklist_refresh_hours"].value(),
+        )
         s.set("i2p_enabled", self._widgets["i2p_enabled"].isChecked())
         s.set("i2p_hostname", self._widgets["i2p_hostname"].text().strip() or "127.0.0.1")
         s.set("i2p_port", self._widgets["i2p_port"].value())

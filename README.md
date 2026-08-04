@@ -42,7 +42,7 @@ A clean, fast, privacy-focused BitTorrent client built with Python, PyQt6, and l
 ### Tools
 - **Create Torrent** - build .torrent files from local files/folders with configurable piece size
 - **RSS Feed Manager** - poll RSS/Atom feeds for new torrents with regex filtering and auto-download
-- **IP Blocklist** - import PeerGuardian-format blocklists
+- **IP Blocklist** - import PeerGuardian-format blocklists with scheduled mirror refresh and failover
 - **Bandwidth Scheduling** - time-based upload/download limits
 - **Peer Filtering** - auto-ban peers by client name patterns
 - **Remote Web UI / API** - optional HTTP/WebSocket control surface with qBittorrent-compatible
@@ -116,6 +116,9 @@ and LSD for existing and newly added torrents and applies the selected session-w
 Settings > Connection can bind libtorrent to a VPN-assigned IPv4/IPv6 address. When the kill switch
 is enabled, the worker pauses active torrents if that address disappears and never auto-resumes them
 when the address returns.
+The IP blocklist controls in the same tab accept a local cache file, an hourly refresh interval, and
+HTTP(S) mirrors listed one per line. Mirrors are tried in order; a failed refresh leaves the previous
+filter and cache active, while a successful download replaces the filter and cache atomically.
 Create Torrent includes named presets with Load, Save As, and Delete controls; presets are stored in
 the application settings and can be reused for public or private release templates.
 The torrent table saves independent column visibility, order, and widths for the Downloading,

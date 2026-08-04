@@ -31,6 +31,10 @@ class Settings:
         "label_rules": [],
         "vpn_bind_address": "",
         "vpn_kill_switch": False,
+        "ip_blocklist_path": "",
+        "ip_blocklist_auto_refresh": False,
+        "ip_blocklist_urls": [],
+        "ip_blocklist_refresh_hours": 24,
         # Private-tracker profile
         "private_tracker_profile": False,
         "private_tracker_unchoke_slots": 4,

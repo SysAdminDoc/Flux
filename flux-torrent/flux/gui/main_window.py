@@ -534,6 +534,8 @@ class MainWindow(QMainWindow):
             w.tracker_tested.connect(self._on_tracker_tested)
         if hasattr(w, "vpn_status"):
             w.vpn_status.connect(self._on_vpn_status)
+        if hasattr(w, "blocklist_status"):
+            w.blocklist_status.connect(self._on_blocklist_status)
 
         # Remote API -> worker
         self.remote_add_magnet_requested.connect(w.add_magnet)
@@ -1203,6 +1205,16 @@ class MainWindow(QMainWindow):
         QTimer.singleShot(15000, self._clear_vpn_status_style)
 
     def _clear_vpn_status_style(self):
+        self._status_label.setStyleSheet("")
+
+    def _on_blocklist_status(self, success: bool, message: str):
+        """Show refresh results without interrupting the active torrent view."""
+        self._status_label.setText(message)
+        color = "#22c55e" if success else "#ef4444"
+        self._status_label.setStyleSheet(f"color: {color}; font-weight: 700;")
+        QTimer.singleShot(15000, self._clear_blocklist_status_style)
+
+    def _clear_blocklist_status_style(self):
         self._status_label.setStyleSheet("")
 
     def _on_tracker_tested(self, info_hash: str, url: str, result: object):

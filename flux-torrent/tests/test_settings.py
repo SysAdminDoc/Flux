@@ -29,6 +29,8 @@ class TestSettings(unittest.TestCase):
         self.assertTrue(self.settings.get("dht_enabled"))
         self.assertEqual(self.settings.get("max_connections"), 500)
         self.assertFalse(self.settings.get("vpn_kill_switch"))
+        self.assertFalse(self.settings.get("ip_blocklist_auto_refresh"))
+        self.assertEqual(self.settings.get("ip_blocklist_refresh_hours"), 24)
 
     def test_i2p_settings_are_validated(self):
         self.assertEqual(build_i2p_settings({}), {})
