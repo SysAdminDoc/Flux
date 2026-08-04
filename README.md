@@ -167,6 +167,12 @@ when the server is bound beyond localhost.
 pyinstaller flux-torrent.spec
 ```
 
+The same PyInstaller output can be packaged without signing credentials. From `flux-torrent/`,
+`python package.py --portable` creates a versioned zip. On Ubuntu 22.04 with the KDE Flatpak
+6.10 runtime, `python package.py --linux` additionally creates an amd64 `.deb`, Flatpak bundle,
+and AUR source tarball; the checked-in `packaging/linux/` manifest and `packaging/aur/PKGBUILD`
+keep those package layouts reproducible.
+
 ## Running Tests
 
 ```bash

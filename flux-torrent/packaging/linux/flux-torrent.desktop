@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=Flux Torrent
+Comment=Privacy-focused BitTorrent client
+Exec=flux-torrent %U
+Icon=com.sysadmindoc.FluxTorrent
+Terminal=false
+Type=Application
+Categories=Network;FileTransfer;P2P;
+MimeType=application/x-bittorrent;x-scheme-handler/magnet;

@@ -1,0 +1,24 @@
+pkgname=flux-torrent-bin
+pkgver=1.0.0
+pkgrel=1
+pkgdesc='Privacy-focused PyQt6 BitTorrent client'
+arch=('x86_64')
+url='https://github.com/SysAdminDoc/Flux'
+license=('MIT')
+depends=('glib2' 'libx11' 'libxcb')
+source=("FluxTorrent-${pkgver}-linux-x86_64.tar.gz::https://github.com/SysAdminDoc/Flux/releases/download/v${pkgver}/FluxTorrent-${pkgver}-linux-x86_64.tar.gz")
+sha256sums=('SKIP')
+
+package() {
+  local bundle="$srcdir/FluxTorrent-${pkgver}-linux-x86_64"
+  install -d "$pkgdir/opt/flux-torrent"
+  cp -a "$bundle/FluxTorrent/." "$pkgdir/opt/flux-torrent/"
+  install -Dm755 /dev/stdin "$pkgdir/usr/bin/flux-torrent" <<'EOF'
+#!/bin/sh
+exec /opt/flux-torrent/FluxTorrent "$@"
+EOF
+  install -Dm644 "$bundle/flux-torrent.desktop" \
+    "$pkgdir/usr/share/applications/com.sysadmindoc.FluxTorrent.desktop"
+  install -Dm644 "$bundle/icon.png" \
+    "$pkgdir/usr/share/icons/hicolor/512x512/apps/com.sysadmindoc.FluxTorrent.png"
+}
