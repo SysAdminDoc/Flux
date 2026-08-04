@@ -531,6 +531,12 @@ def _detail_payload(detail: Any, info_hash: str) -> dict[str, Any]:
         "trackers": [_object_payload(item) for item in getattr(detail, "trackers", []) or []],
         "pieces": list(getattr(detail, "pieces", []) or []),
         "piece_length": int(getattr(detail, "piece_length", 0) or 0),
+        "peer_piece_owners": [
+            int(item) for item in getattr(detail, "peer_piece_owners", []) or []
+        ],
+        "peer_piece_labels": [
+            str(item) for item in getattr(detail, "peer_piece_labels", []) or []
+        ],
         "download_history": list(getattr(detail, "dl_history", []) or []),
         "upload_history": list(getattr(detail, "ul_history", []) or []),
         "logs": [

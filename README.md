@@ -71,6 +71,7 @@ A clean, fast, privacy-focused BitTorrent client built with Python, PyQt6, and l
   non-mutating suggested next action
 - **Peer reputation memory** - persist weighted peer error/disconnect evidence and apply a low
   per-peer transfer cap instead of banning repeat offenders
+- **Peer-colored piece map** - show which connected peers advertise each incomplete piece
 
 ## Requirements
 
@@ -148,6 +149,9 @@ Peer reputation memory is configured in Settings > Connection. It stores bounded
 atomic JSON file, weighting disconnects, errors, and hash failures separately; peers above the
 configured score are throttled on future connections across sessions rather than added to the IP
 blocklist.
+The Pieces tab also colors incomplete pieces by the first of up to twelve connected peers that
+advertises them; completed pieces retain the green completion color and the legend identifies each
+peer color.
 
 ## Usage
 

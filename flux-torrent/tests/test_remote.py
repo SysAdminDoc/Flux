@@ -98,6 +98,8 @@ class TestRemoteProtocol(unittest.TestCase):
             trackers=[TorrentTracker("https://tracker.invalid/announce", "Working", 2, 3)],
             pieces=[2, 1, 0],
             piece_length=16,
+            peer_piece_owners=[-1, 0, 1],
+            peer_piece_labels=["client @ 127.0.0.1:6881", "other @ 127.0.0.2:6882"],
             dl_history=[5],
             ul_history=[6],
             logs=[{
@@ -143,6 +145,8 @@ class TestRemoteProtocol(unittest.TestCase):
         self.assertEqual(detail.files[0].path, "test.bin")
         self.assertEqual(detail.peers[0].client, "client")
         self.assertEqual(detail.pieces, [2, 1, 0])
+        self.assertEqual(detail.peer_piece_owners, [-1, 0, 1])
+        self.assertEqual(len(detail.peer_piece_labels), 2)
         self.assertEqual(detail.logs[0]["type"], "metadata_received")
 
     def test_client_commands_use_existing_controller_boundary(self):

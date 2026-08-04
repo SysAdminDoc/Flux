@@ -534,6 +534,12 @@ def _detail_from_payload(payload: dict[str, Any], info_hash: str) -> DetailData:
         trackers=[_tracker_from_payload(item) for item in payload.get("trackers", []) if isinstance(item, dict)],
         pieces=[_as_int(item) for item in payload.get("pieces", []) or []],
         piece_length=_as_int(payload.get("piece_length")),
+        peer_piece_owners=[
+            _as_int(item, -1) for item in payload.get("peer_piece_owners", []) or []
+        ],
+        peer_piece_labels=[
+            str(item) for item in payload.get("peer_piece_labels", []) or []
+        ],
         dl_history=_as_int_list(payload.get("download_history")),
         ul_history=_as_int_list(payload.get("upload_history")),
         logs=[dict(item) for item in payload.get("logs", []) if isinstance(item, dict)],

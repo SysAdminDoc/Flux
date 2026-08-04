@@ -12,6 +12,8 @@ All notable changes to Flux will be documented in this file.
   suggested actions that never mutate torrent state.
 - Added bounded persistent peer reputation memory with weighted disconnect/error/hash-failure
   scores and per-peer transfer caps for repeat offenders without automatic IP bans.
+- Added peer-colored piece availability mapping in the Pieces tab, with bounded cross-thread data
+  and a legend for connected peers advertising incomplete pieces.
 - Added conservative smart re-checking: unchanged files skip hashing, changed files validate only
   overlapping v1 pieces, and unsafe or unsupported cases fall back to libtorrent's full verifier.
 - Added scheduled IP blocklist refresh with HTTP(S) mirror failover, bounded parsing, gzip support,

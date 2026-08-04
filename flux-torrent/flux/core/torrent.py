@@ -14,6 +14,8 @@ from typing import List
 
 import libtorrent as lt
 
+from flux.core.piece_sources import build_peer_piece_map
+
 logger = logging.getLogger(__name__)
 
 # Safe flag resolution (API varies between binding versions)
@@ -555,6 +557,21 @@ class Torrent:
             return pieces
         except Exception:
             return []
+
+    def get_peer_piece_map(self) -> tuple[list[int], list[str]]:
+        """Map advertised pieces to a bounded set of peer labels."""
+        try:
+            piece_count = self.num_pieces
+            peer_sources = []
+            for peer in self._handle.get_peer_info():
+                bitfield = getattr(peer, "pieces", None)
+                if bitfield is None:
+                    continue
+                label = f"{peer.client or 'Peer'} @ {peer.ip[0]}:{peer.ip[1]}"
+                peer_sources.append((label, bitfield))
+            return build_peer_piece_map(peer_sources, piece_count)
+        except Exception:
+            return ([-1] * max(0, self.num_pieces), [])
 
     # --- Speed History ---
 

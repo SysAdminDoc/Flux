@@ -167,6 +167,8 @@ class DetailData:
     trackers: list = field(default_factory=list)
     pieces: list = field(default_factory=list)
     piece_length: int = 0
+    peer_piece_owners: list = field(default_factory=list)
+    peer_piece_labels: list = field(default_factory=list)
     dl_history: list = field(default_factory=list)
     ul_history: list = field(default_factory=list)
     logs: list = field(default_factory=list)
@@ -1516,6 +1518,7 @@ class SessionWorker(QObject):
             t = self._torrents.get(self._focused_hash)
             if t:
                 try:
+                    peer_piece_owners, peer_piece_labels = t.get_peer_piece_map()
                     detail = DetailData(
                         info_hash=self._focused_hash,
                         files=t.get_files(),
@@ -1524,6 +1527,8 @@ class SessionWorker(QObject):
                                   self._tracker_proxy_manager.tracker_snapshots(self._focused_hash)),
                         pieces=t.get_piece_states(),
                         piece_length=t.piece_length,
+                        peer_piece_owners=peer_piece_owners,
+                        peer_piece_labels=peer_piece_labels,
                         dl_history=t.speed_history_dl[:],
                         ul_history=t.speed_history_ul[:],
                         logs=[entry.copy() for entry in self._torrent_logs.get(

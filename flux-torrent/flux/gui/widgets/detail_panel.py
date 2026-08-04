@@ -4,6 +4,8 @@ All data comes from thread-safe dataclasses (TorrentSnapshot, DetailData).
 No direct libtorrent FFI calls from the GUI thread.
 """
 
+import html
+
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont, QColor
 from PyQt6.QtWidgets import (
@@ -158,6 +160,9 @@ class DetailPanel(QWidget):
         pieces_layout.addWidget(self._piece_info_label)
         self._pieces_map = PieceMapWidget()
         pieces_layout.addWidget(self._pieces_map)
+        self._piece_legend = QLabel()
+        self._piece_legend.setWordWrap(True)
+        pieces_layout.addWidget(self._piece_legend)
         pieces_layout.addStretch()
         self._tabs.addTab(self._pieces_widget, "Pieces")
 
@@ -199,6 +204,8 @@ class DetailPanel(QWidget):
             self._speed_graph.apply_theme()
         if hasattr(self, '_pieces_map'):
             self._pieces_map.apply_theme()
+        if hasattr(self, '_piece_legend'):
+            self._piece_legend.setStyleSheet(f"color: {_tc('text_muted')}; font-size: 10px;")
 
         if hasattr(self, '_label_widgets'):
             label_style = f"color: {_tc('text_dim')}; font-size: 10px; font-weight: 600;"
@@ -305,7 +312,12 @@ class DetailPanel(QWidget):
         elif tab == 3:
             self._refresh_trackers(detail.trackers)
         elif tab == 4:
-            self._refresh_pieces(detail.pieces, detail.piece_length)
+            self._refresh_pieces(
+                detail.pieces,
+                detail.piece_length,
+                detail.peer_piece_owners,
+                detail.peer_piece_labels,
+            )
         elif tab == 5:
             self._refresh_logs(detail.logs)
 
@@ -540,7 +552,13 @@ class DetailPanel(QWidget):
 
     # --- Pieces Tab ---
 
-    def _refresh_pieces(self, pieces: list, piece_length: int = 0):
+    def _refresh_pieces(
+        self,
+        pieces: list,
+        piece_length: int = 0,
+        peer_piece_owners: list | None = None,
+        peer_piece_labels: list | None = None,
+    ):
         if pieces:
             total = len(pieces)
             have = pieces.count(2)
@@ -550,10 +568,21 @@ class DetailPanel(QWidget):
                 f"{total} pieces  |  {have} complete  |  {downloading} downloading  |  {missing} missing  |  "
                 f"Piece size: {format_bytes(piece_length)}"
             )
-            self._pieces_map.set_pieces(pieces)
+            self._pieces_map.set_pieces(pieces, peer_piece_owners, peer_piece_labels)
+            labels = list(peer_piece_labels or [])
+            if labels:
+                colors = [self._pieces_map.peer_color(index).name() for index in range(len(labels))]
+                legend = "<b>Peer availability:</b> " + " ".join(
+                    f"<span style='color:{color}'>●</span> {html.escape(label)}"
+                    for color, label in zip(colors, labels)
+                )
+                self._piece_legend.setText(legend)
+            else:
+                self._piece_legend.setText("No connected peer is advertising piece availability.")
         else:
             self._piece_info_label.setText("No piece information available")
-            self._pieces_map.set_pieces([])
+            self._pieces_map.set_pieces([], [], [])
+            self._piece_legend.setText("")
 
     def _refresh_logs(self, logs: list):
         """Render only the alert records attached to the focused torrent."""
