@@ -25,6 +25,7 @@ from PyQt6.QtCore import QObject, QTimer, pyqtSignal, pyqtSlot, QThread, QMetaOb
 
 from flux.core.torrent import Torrent, get_info_hashes
 from flux.core.activity_heatmap import normalize_heatmap, record_activity
+from flux.core.notifications import crossed_ratio_milestones, normalize_ratio_milestones
 from flux.core.vpn_binding import build_listen_interfaces, is_bind_address_available
 from flux.core.blocklist import (
     BlocklistFetchResult,
@@ -194,6 +195,7 @@ class SessionWorker(QObject):
     recheck_status = pyqtSignal(str, str)  # info hash, user-facing status
     integrity_ready = pyqtSignal(object)  # (info hash, IntegrityResult)
     integrity_status = pyqtSignal(bool, str)  # success/progress, user-facing status
+    ratio_milestone = pyqtSignal(str, float)  # info hash, crossed ratio
     started = pyqtSignal()
     stopped = pyqtSignal()
 
@@ -220,6 +222,7 @@ class SessionWorker(QObject):
         self._activity_heatmap = normalize_heatmap(self._cfg.get("activity_heatmap", []))
         self._last_activity_at: float | None = None
         self._torrent_logs: Dict[str, list] = {}
+        self._ratio_last_seen: dict[str, float] = {}
         self._vpn_bind_address = str(self._cfg.get("vpn_bind_address", "") or "").strip()
         self._vpn_kill_switch = bool(self._cfg.get("vpn_kill_switch", False))
         self._vpn_available: bool | None = None
@@ -531,6 +534,7 @@ class SessionWorker(QObject):
         self._recheck_fingerprints.pop(info_hash, None)
         self._full_rechecks_pending.discard(info_hash)
         self._torrent_logs.pop(info_hash, None)
+        self._ratio_last_seen.pop(info_hash, None)
 
         if self._resume_db:
             try:
@@ -1390,6 +1394,7 @@ class SessionWorker(QObject):
                 torrent.record_speed()
                 self._enforce_label_ratio(torrent, snap)
                 snapshots.append(snap)
+                self._emit_ratio_milestones(snap)
                 if should_auto_delete(snap, self._cfg):
                     auto_delete_hashes.append(snap.info_hash)
             except Exception:
@@ -1434,6 +1439,22 @@ class SessionWorker(QObject):
             self.remove_torrent(
                 info_hash, bool(self._cfg.get("auto_delete_files", True))
             )
+
+    def _emit_ratio_milestones(self, snap):
+        """Emit each configured threshold once as a torrent ratio rises."""
+        try:
+            current = float(snap.ratio)
+        except (AttributeError, TypeError, ValueError):
+            return
+        previous = self._ratio_last_seen.get(snap.info_hash)
+        self._ratio_last_seen[snap.info_hash] = current
+        if previous is None or not self._cfg.get("ratio_notifications_enabled", False):
+            return
+        milestones = normalize_ratio_milestones(
+            self._cfg.get("ratio_notification_milestones", [1.0, 2.0])
+        )
+        for milestone in crossed_ratio_milestones(previous, current, milestones):
+            self.ratio_milestone.emit(snap.info_hash, milestone)
 
     # --- Internal: Bandwidth schedule ---
 

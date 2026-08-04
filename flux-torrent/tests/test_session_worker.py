@@ -56,6 +56,21 @@ class TestSessionStats(unittest.TestCase):
         self.assertEqual(len(s2.torrents), 0)
 
 
+class TestRatioMilestoneEmission(unittest.TestCase):
+    def test_first_observation_is_baseline_and_crossings_emit_once(self):
+        worker = SessionWorker({
+            "ratio_notifications_enabled": True,
+            "ratio_notification_milestones": [1.0, 2.0],
+        })
+        emitted = []
+        worker.ratio_milestone.connect(lambda info_hash, ratio: emitted.append((info_hash, ratio)))
+        worker._emit_ratio_milestones(SimpleNamespace(info_hash="hash", ratio=0.5))
+        worker._emit_ratio_milestones(SimpleNamespace(info_hash="hash", ratio=2.1))
+        worker._emit_ratio_milestones(SimpleNamespace(info_hash="hash", ratio=2.5))
+        self.assertEqual(emitted, [("hash", 1.0), ("hash", 2.0)])
+        worker.shutdown()
+
+
 class TestDetailData(unittest.TestCase):
     """Test DetailData dataclass."""
 

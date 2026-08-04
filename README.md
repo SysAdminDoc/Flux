@@ -67,6 +67,8 @@ A clean, fast, privacy-focused BitTorrent client built with Python, PyQt6, and l
 - **Column profiles** - keep focused Downloading, Seeding, and Completed table layouts
 - **Activity Heatmap** - review accumulated download/upload volume across local weekday/hour cells
 - **Settings search** - fuzzy-filter tabs and setting groups without changing their stored values
+- **Ratio milestone notifications** - optionally notify at 1.0, 2.0, or custom ratios with a
+  non-mutating suggested next action
 
 ## Requirements
 
@@ -137,6 +139,9 @@ For completed torrents, use Generate SHA-256 Manifest from the context menu or e
 generation in Settings > Behavior. Manifests include relative file paths, sizes, SHA-256 digests,
 the torrent identity, and a UTC generation timestamp; files that change during hashing are rejected
 without replacing the previous sidecar.
+Ratio milestone notifications are configured in Settings > Behavior. They are emitted once as a
+torrent's observed ratio crosses each configured threshold and remain informational: the suggested
+action is shown in the notification, but Flux never pauses or removes a torrent because of it.
 
 ## Usage
 

@@ -17,6 +17,7 @@ from flux.core.settings import (
     build_torrent_schedule_settings,
 )
 from flux.core.blocklist import normalize_blocklist_urls
+from flux.core.notifications import normalize_ratio_milestones
 
 
 def _search_text(value: str) -> str:
@@ -623,6 +624,35 @@ class SettingsDialog(QDialog):
 
         layout.addWidget(tray_group)
 
+        ratio_notification_group = QGroupBox("Ratio milestone notifications")
+        ratio_notification_layout = QGridLayout(ratio_notification_group)
+        ratio_notification_layout.setSpacing(8)
+
+        ratio_notifications = QCheckBox("Show a desktop notification when a ratio milestone is reached")
+        self._widgets["ratio_notifications_enabled"] = ratio_notifications
+        ratio_notification_layout.addWidget(ratio_notifications, 0, 0, 1, 3)
+
+        ratio_notification_layout.addWidget(QLabel("Milestones:"), 1, 0)
+        ratio_milestones = QLineEdit()
+        ratio_milestones.setPlaceholderText("1.0, 2.0, 3.0")
+        self._widgets["ratio_notification_milestones"] = ratio_milestones
+        ratio_notification_layout.addWidget(ratio_milestones, 1, 1, 1, 2)
+
+        ratio_notification_layout.addWidget(QLabel("Suggested action:"), 2, 0)
+        ratio_action = QComboBox()
+        ratio_action.addItem("Review this torrent", "review")
+        ratio_action.addItem("Consider pausing", "pause")
+        ratio_action.addItem("Continue seeding", "seed")
+        self._widgets["ratio_notification_action"] = ratio_action
+        ratio_notification_layout.addWidget(ratio_action, 2, 1)
+
+        ratio_hint = QLabel(
+            "Notifications are informational only; Flux never pauses or removes a torrent automatically from this setting."
+        )
+        ratio_hint.setWordWrap(True)
+        ratio_notification_layout.addWidget(ratio_hint, 3, 0, 1, 3)
+        layout.addWidget(ratio_notification_group)
+
         # Trackers
         tracker_group = QGroupBox("Trackers")
         trg = QVBoxLayout(tracker_group)
@@ -995,6 +1025,18 @@ class SettingsDialog(QDialog):
         self._widgets["minimize_to_tray"].setChecked(s.get("minimize_to_tray", True))
         self._widgets["close_to_tray"].setChecked(s.get("close_to_tray", True))
         self._widgets["start_minimized"].setChecked(s.get("start_minimized", False))
+        self._widgets["ratio_notifications_enabled"].setChecked(
+            s.get("ratio_notifications_enabled", False)
+        )
+        self._widgets["ratio_notification_milestones"].setText(
+            ", ".join(str(value) for value in normalize_ratio_milestones(
+                s.get("ratio_notification_milestones", [1.0, 2.0])
+            ))
+        )
+        ratio_action = self._widgets["ratio_notification_action"]
+        action_key = s.get("ratio_notification_action", "review")
+        action_index = ratio_action.findData(action_key)
+        ratio_action.setCurrentIndex(max(0, action_index))
         self._widgets["auto_update_trackers"].setChecked(s.get("auto_update_trackers", False))
         self._widgets["tracker_list_url"].setText(s.get("tracker_list_url", ""))
         self._widgets["label_rules"].setPlainText(json.dumps(
@@ -1130,6 +1172,20 @@ class SettingsDialog(QDialog):
         s.set("minimize_to_tray", self._widgets["minimize_to_tray"].isChecked())
         s.set("close_to_tray", self._widgets["close_to_tray"].isChecked())
         s.set("start_minimized", self._widgets["start_minimized"].isChecked())
+        s.set(
+            "ratio_notifications_enabled",
+            self._widgets["ratio_notifications_enabled"].isChecked(),
+        )
+        s.set(
+            "ratio_notification_milestones",
+            normalize_ratio_milestones(
+                self._widgets["ratio_notification_milestones"].text()
+            ),
+        )
+        s.set(
+            "ratio_notification_action",
+            self._widgets["ratio_notification_action"].currentData() or "review",
+        )
         s.set("auto_update_trackers", self._widgets["auto_update_trackers"].isChecked())
         s.set("tracker_list_url", self._widgets["tracker_list_url"].text())
         try:

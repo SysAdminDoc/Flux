@@ -25,6 +25,7 @@ from PyQt6.QtWidgets import (
 from flux.core.session_worker import ThreadedSession, SessionStats, DetailData
 from flux.core.remote_client import RemoteThreadedSession
 from flux.core.settings import Settings
+from flux.core.notifications import ratio_notification_body
 from flux.core.torrent import TorrentState
 from flux.core.column_profiles import normalize_column_profile, normalize_column_profiles
 from flux.core.remote import RemoteControlServer
@@ -542,6 +543,8 @@ class MainWindow(QMainWindow):
             w.recheck_status.connect(self._on_recheck_status)
         if hasattr(w, "integrity_status"):
             w.integrity_status.connect(self._on_integrity_status)
+        if hasattr(w, "ratio_milestone"):
+            w.ratio_milestone.connect(self._on_ratio_milestone)
 
         # Remote API -> worker
         self.remote_add_magnet_requested.connect(w.add_magnet)
@@ -1111,6 +1114,24 @@ class MainWindow(QMainWindow):
 
     def _on_torrent_error(self, info_hash, msg):
         self._status_label.setText(f"Error: {msg}")
+
+    def _on_ratio_milestone(self, info_hash: str, milestone: float):
+        """Show an informational tray notification without changing torrent state."""
+        snap = self._torrent_model.find_snapshot(info_hash)
+        name = snap.name if snap else info_hash[:12]
+        body = ratio_notification_body(
+            name,
+            milestone,
+            self._settings.get("ratio_notification_action", "review"),
+        )
+        self._status_label.setText(body)
+        if self._tray and self._settings.get("ratio_notifications_enabled", False):
+            self._tray.showMessage(
+                "Ratio milestone reached",
+                body,
+                QSystemTrayIcon.MessageIcon.Information,
+                10000,
+            )
 
     def _on_metadata_received(self, info_hash):
         snap = self._torrent_model.find_snapshot(info_hash)

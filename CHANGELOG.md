@@ -8,6 +8,8 @@ All notable changes to Flux will be documented in this file.
   atomic publication, race detection, automatic completion generation, and a manual context action.
 - Added reproducible unsigned portable, Debian, Flatpak, and AUR packaging from the native
   PyInstaller output.
+- Added optional ratio milestone desktop notifications with custom thresholds and informational
+  suggested actions that never mutate torrent state.
 - Added conservative smart re-checking: unchanged files skip hashing, changed files validate only
   overlapping v1 pieces, and unsafe or unsupported cases fall back to libtorrent's full verifier.
 - Added scheduled IP blocklist refresh with HTTP(S) mirror failover, bounded parsing, gzip support,

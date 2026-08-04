@@ -33,6 +33,9 @@ class TestSettings(unittest.TestCase):
         self.assertEqual(self.settings.get("ip_blocklist_refresh_hours"), 24)
         self.assertFalse(self.settings.get("integrity_manifest_auto"))
         self.assertEqual(self.settings.get("integrity_manifest_dir"), "")
+        self.assertFalse(self.settings.get("ratio_notifications_enabled"))
+        self.assertEqual(self.settings.get("ratio_notification_milestones"), [1.0, 2.0])
+        self.assertEqual(self.settings.get("ratio_notification_action"), "review")
 
     def test_i2p_settings_are_validated(self):
         self.assertEqual(build_i2p_settings({}), {})
