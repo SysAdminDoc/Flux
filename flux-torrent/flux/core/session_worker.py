@@ -24,6 +24,7 @@ from PyQt6.QtCore import QObject, QTimer, pyqtSignal, pyqtSlot, QThread, QMetaOb
 
 from flux.core.torrent import Torrent, get_info_hashes
 from flux.core.activity_heatmap import normalize_heatmap, record_activity
+from flux.core.vpn_binding import build_listen_interfaces, is_bind_address_available
 from flux.core.settings import (
     Settings,
     build_i2p_settings,
@@ -167,6 +168,7 @@ class SessionWorker(QObject):
     peer_banned = pyqtSignal(str, str)
     magnet_uri_ready = pyqtSignal(str)    # magnet URI string
     tracker_tested = pyqtSignal(str, str, object)  # hash, URL, result payload
+    vpn_status = pyqtSignal(bool, str)  # available, user-facing status
     started = pyqtSignal()
     stopped = pyqtSignal()
 
@@ -190,6 +192,9 @@ class SessionWorker(QObject):
         self._activity_heatmap = normalize_heatmap(self._cfg.get("activity_heatmap", []))
         self._last_activity_at: float | None = None
         self._torrent_logs: Dict[str, list] = {}
+        self._vpn_bind_address = str(self._cfg.get("vpn_bind_address", "") or "").strip()
+        self._vpn_kill_switch = bool(self._cfg.get("vpn_kill_switch", False))
+        self._vpn_available: bool | None = None
 
         self._focused_hash: str = ""
 
@@ -208,8 +213,9 @@ class SessionWorker(QObject):
         settings = {
             'user_agent': 'FluxTorrent/1.0',
             'peer_fingerprint': '-FX1000-',
-            'listen_interfaces': '0.0.0.0:{p},[::0]:{p}'.format(
-                p=self._cfg.get("listen_port", 6881)),
+            'listen_interfaces': build_listen_interfaces(
+                self._vpn_bind_address, self._cfg.get("listen_port", 6881)
+            ),
             'connections_limit': self._cfg.get("max_connections", 500),
             'max_peerlist_size': 4000,
             'enable_dht': self._cfg.get("dht_enabled", True),
@@ -618,6 +624,11 @@ class SessionWorker(QObject):
         """Re-apply settings. Accepts a fresh config dict from the GUI thread."""
         if cfg is not None:
             self._cfg = cfg
+            self._vpn_bind_address = str(
+                self._cfg.get("vpn_bind_address", "") or ""
+            ).strip()
+            self._vpn_kill_switch = bool(self._cfg.get("vpn_kill_switch", False))
+            self._vpn_available = None
             self._tracker_proxy_manager.configure(build_tracker_proxy_rules(self._cfg))
             self._label_rules = parse_label_rules(build_label_automation_rules(self._cfg))
             self._torrent_schedules = parse_torrent_schedules(
@@ -634,6 +645,9 @@ class SessionWorker(QObject):
         settings['active_downloads'] = self._cfg.get("max_active_downloads", 5)
         settings['active_seeds'] = self._cfg.get("max_active_uploads", 5)
         settings['active_limit'] = self._cfg.get("max_active_torrents", 10)
+        settings['listen_interfaces'] = build_listen_interfaces(
+            self._vpn_bind_address, self._cfg.get("listen_port", 6881)
+        )
         settings.update(build_i2p_settings(self._cfg))
         settings.update(build_private_tracker_settings(self._cfg))
         self._session.apply_settings(settings)
@@ -965,6 +979,40 @@ class SessionWorker(QObject):
 
     # --- Internal: Stats ---
 
+    def _check_vpn_binding(self):
+        """Pause torrents when a configured VPN bind address disappears."""
+        if not self._vpn_kill_switch or not self._vpn_bind_address:
+            self._vpn_available = None
+            return
+
+        available = is_bind_address_available(self._vpn_bind_address)
+        previous = self._vpn_available
+        if previous is available:
+            return
+        self._vpn_available = available
+
+        if previous is None and available:
+            return
+
+        if not available:
+            paused_count = 0
+            for torrent in self._torrents.values():
+                try:
+                    if not torrent.handle.is_paused():
+                        torrent.pause()
+                        paused_count += 1
+                except Exception:
+                    pass
+            self.vpn_status.emit(
+                False,
+                f"VPN binding lost ({self._vpn_bind_address}); paused {paused_count} torrent(s)",
+            )
+        else:
+            self.vpn_status.emit(
+                True,
+                f"VPN binding restored ({self._vpn_bind_address}); torrents remain paused",
+            )
+
     def _record_activity(self, download_rate: int, upload_rate: int):
         """Convert the latest rates into byte volume for the local hour cell."""
         now = time.monotonic()
@@ -984,6 +1032,8 @@ class SessionWorker(QObject):
     def _update_stats(self):
         if not self._session:
             return
+
+        self._check_vpn_binding()
 
         self._tracker_proxy_manager.tick(
             self._torrents.values(), self._session,

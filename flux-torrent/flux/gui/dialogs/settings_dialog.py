@@ -414,6 +414,24 @@ class SettingsDialog(QDialog):
 
         layout.addWidget(port_group)
 
+        vpn_group = QGroupBox("VPN binding / kill switch")
+        vpn_layout = QGridLayout(vpn_group)
+        vpn_layout.setSpacing(8)
+        vpn_layout.addWidget(QLabel("VPN interface address:"), 0, 0)
+        vpn_address = QLineEdit()
+        vpn_address.setPlaceholderText("e.g. 10.8.0.2")
+        self._widgets["vpn_bind_address"] = vpn_address
+        vpn_layout.addWidget(vpn_address, 0, 1, 1, 2)
+        vpn_kill = QCheckBox("Pause all torrents if this address disappears")
+        self._widgets["vpn_kill_switch"] = vpn_kill
+        vpn_layout.addWidget(vpn_kill, 1, 0, 1, 3)
+        vpn_hint = QLabel(
+            "Binding is restricted to this IPv4/IPv6 address. Recovery never auto-resumes torrents."
+        )
+        vpn_hint.setWordWrap(True)
+        vpn_layout.addWidget(vpn_hint, 2, 0, 1, 3)
+        layout.addWidget(vpn_group)
+
         i2p_group = QGroupBox("I2P / SAM Bridge")
         i2p_layout = QGridLayout(i2p_group)
         i2p_layout.setSpacing(8)
@@ -868,6 +886,8 @@ class SettingsDialog(QDialog):
         self._widgets["listen_port"].setValue(s.get("listen_port", 6881))
         self._widgets["upnp_enabled"].setChecked(s.get("upnp_enabled", True))
         self._widgets["natpmp_enabled"].setChecked(s.get("natpmp_enabled", True))
+        self._widgets["vpn_bind_address"].setText(s.get("vpn_bind_address", ""))
+        self._widgets["vpn_kill_switch"].setChecked(s.get("vpn_kill_switch", False))
         self._widgets["i2p_enabled"].setChecked(s.get("i2p_enabled", False))
         self._widgets["i2p_hostname"].setText(s.get("i2p_hostname", "127.0.0.1"))
         self._widgets["i2p_port"].setValue(s.get("i2p_port", 7656))
@@ -988,6 +1008,8 @@ class SettingsDialog(QDialog):
         s.set("listen_port", self._widgets["listen_port"].value())
         s.set("upnp_enabled", self._widgets["upnp_enabled"].isChecked())
         s.set("natpmp_enabled", self._widgets["natpmp_enabled"].isChecked())
+        s.set("vpn_bind_address", self._widgets["vpn_bind_address"].text().strip())
+        s.set("vpn_kill_switch", self._widgets["vpn_kill_switch"].isChecked())
         s.set("i2p_enabled", self._widgets["i2p_enabled"].isChecked())
         s.set("i2p_hostname", self._widgets["i2p_hostname"].text().strip() or "127.0.0.1")
         s.set("i2p_port", self._widgets["i2p_port"].value())

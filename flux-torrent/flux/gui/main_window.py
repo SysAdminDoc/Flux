@@ -11,7 +11,7 @@ import shutil
 import logging
 import time
 
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QFont, QColor, QDragEnterEvent, QDropEvent, QPalette
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
@@ -532,6 +532,8 @@ class MainWindow(QMainWindow):
         w.magnet_uri_ready.connect(self._on_magnet_uri_ready)
         if hasattr(w, "tracker_tested"):
             w.tracker_tested.connect(self._on_tracker_tested)
+        if hasattr(w, "vpn_status"):
+            w.vpn_status.connect(self._on_vpn_status)
 
         # Remote API -> worker
         self.remote_add_magnet_requested.connect(w.add_magnet)
@@ -1192,6 +1194,16 @@ class MainWindow(QMainWindow):
 
     def _on_peer_banned(self, ip, reason):
         self._status_label.setText(f"Banned peer {ip}: {reason}")
+
+    def _on_vpn_status(self, available: bool, message: str):
+        """Flash a safety status without changing focus or user input state."""
+        self._status_label.setText(message)
+        color = "#22c55e" if available else "#ef4444"
+        self._status_label.setStyleSheet(f"color: {color}; font-weight: 700;")
+        QTimer.singleShot(15000, self._clear_vpn_status_style)
+
+    def _clear_vpn_status_style(self):
+        self._status_label.setStyleSheet("")
 
     def _on_tracker_tested(self, info_hash: str, url: str, result: object):
         """Show a compact synthetic announce result for the selected tracker."""

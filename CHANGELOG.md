@@ -4,6 +4,8 @@ All notable changes to Flux will be documented in this file.
 
 ## Unreleased
 
+- Added VPN-address binding with a fail-closed kill switch: a missing configured address pauses
+  active torrents, flashes the safety status in the UI, and never auto-resumes on recovery.
 - Added fuzzy Settings search across tab names, group titles, labels, setting keys, and control
   placeholders, with matching tabs and groups kept visible while values remain editable.
 - Added a persistent 7 x 24 local-time Activity Heatmap with separate download/upload volume bars

@@ -28,6 +28,7 @@ class TestSettings(unittest.TestCase):
         self.assertEqual(self.settings.get("listen_port"), 6881)
         self.assertTrue(self.settings.get("dht_enabled"))
         self.assertEqual(self.settings.get("max_connections"), 500)
+        self.assertFalse(self.settings.get("vpn_kill_switch"))
 
     def test_i2p_settings_are_validated(self):
         self.assertEqual(build_i2p_settings({}), {})

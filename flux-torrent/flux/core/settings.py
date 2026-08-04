@@ -29,6 +29,8 @@ class Settings:
         "proxy_pass": "",
         "tracker_proxy_rules": [],
         "label_rules": [],
+        "vpn_bind_address": "",
+        "vpn_kill_switch": False,
         # Private-tracker profile
         "private_tracker_profile": False,
         "private_tracker_unchoke_slots": 4,
