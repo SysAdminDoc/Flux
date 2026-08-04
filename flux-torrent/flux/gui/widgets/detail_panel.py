@@ -10,7 +10,7 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QTabWidget,
     QTableWidget, QTableWidgetItem, QTreeWidget, QTreeWidgetItem,
     QHeaderView, QFrame, QGridLayout, QPushButton, QMenu,
-    QInputDialog,
+    QInputDialog, QPlainTextEdit,
 )
 
 from flux.core.torrent import TorrentSnapshot
@@ -161,6 +161,15 @@ class DetailPanel(QWidget):
         pieces_layout.addStretch()
         self._tabs.addTab(self._pieces_widget, "Pieces")
 
+        # --- Log Tab ---
+        self._log_edit = QPlainTextEdit()
+        self._log_edit.setReadOnly(True)
+        self._log_edit.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
+        self._log_edit.setPlaceholderText("No alerts recorded for this torrent")
+        self._log_edit.setFont(QFont("Consolas", 10))
+        self._tabs.addTab(self._log_edit, "Log")
+        self._tabs.currentChanged.connect(self._on_tab_changed)
+
     def apply_theme(self):
         self._handle.setStyleSheet(f"background-color: {_tc('border')};")
         self._header.setStyleSheet(f"background-color: {_tc('bg_card')};")
@@ -297,8 +306,15 @@ class DetailPanel(QWidget):
             self._refresh_trackers(detail.trackers)
         elif tab == 4:
             self._refresh_pieces(detail.pieces, detail.piece_length)
+        elif tab == 5:
+            self._refresh_logs(detail.logs)
 
         self._speed_graph.set_data(detail.dl_history, detail.ul_history)
+
+    def _on_tab_changed(self, _index: int):
+        """Render the most recent snapshot when a detail tab is opened."""
+        if self._current_detail is not None:
+            self.update_detail(self._current_detail)
 
     def refresh_from_snapshot(self, snap: TorrentSnapshot):
         """Called each stats cycle with the latest snapshot for the focused torrent."""
@@ -538,6 +554,22 @@ class DetailPanel(QWidget):
         else:
             self._piece_info_label.setText("No piece information available")
             self._pieces_map.set_pieces([])
+
+    def _refresh_logs(self, logs: list):
+        """Render only the alert records attached to the focused torrent."""
+        lines = []
+        for entry in logs or []:
+            if not isinstance(entry, dict):
+                continue
+            timestamp = str(entry.get("timestamp", "--") or "--")
+            level = str(entry.get("level", "INFO") or "INFO")
+            alert_type = str(entry.get("type", "alert") or "alert")
+            message = " ".join(str(entry.get("message", "") or "").split())
+            lines.append(f"{timestamp} [{level:5}] {alert_type}: {message}")
+        self._log_edit.setPlainText("\n".join(lines))
+        if lines:
+            scrollbar = self._log_edit.verticalScrollBar()
+            scrollbar.setValue(scrollbar.maximum())
 
     def _close_panel(self):
         self._current_hash = ""

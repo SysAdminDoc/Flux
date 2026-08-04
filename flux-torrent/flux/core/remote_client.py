@@ -534,6 +534,7 @@ def _detail_from_payload(payload: dict[str, Any], info_hash: str) -> DetailData:
         piece_length=_as_int(payload.get("piece_length")),
         dl_history=_as_int_list(payload.get("download_history")),
         ul_history=_as_int_list(payload.get("upload_history")),
+        logs=[dict(item) for item in payload.get("logs", []) if isinstance(item, dict)],
     )
 
 

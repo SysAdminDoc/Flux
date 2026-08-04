@@ -532,6 +532,10 @@ def _detail_payload(detail: Any, info_hash: str) -> dict[str, Any]:
         "piece_length": int(getattr(detail, "piece_length", 0) or 0),
         "download_history": list(getattr(detail, "dl_history", []) or []),
         "upload_history": list(getattr(detail, "ul_history", []) or []),
+        "logs": [
+            dict(entry) if isinstance(entry, dict) else _object_payload(entry)
+            for entry in getattr(detail, "logs", []) or []
+        ],
     }
 
 

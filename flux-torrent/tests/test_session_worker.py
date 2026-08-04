@@ -1,11 +1,15 @@
 """Tests for session worker data structures."""
 
 import unittest
+from unittest.mock import patch
 from flux.core.session_worker import (
     SessionStats,
     DetailData,
     _apply_private_tracker_profile,
     _PRIVATE_TRACKER_FLAGS,
+    _MAX_TORRENT_LOG_ENTRIES,
+    _alert_log_entry,
+    SessionWorker,
 )
 
 
@@ -62,12 +66,52 @@ class TestDetailData(unittest.TestCase):
         self.assertIsInstance(d.pieces, list)
         self.assertIsInstance(d.dl_history, list)
         self.assertIsInstance(d.ul_history, list)
+        self.assertIsInstance(d.logs, list)
 
     def test_list_independence(self):
         d1 = DetailData()
         d2 = DetailData()
         d1.files.append("test")
         self.assertEqual(len(d2.files), 0)
+        d1.logs.append({"message": "one"})
+        self.assertEqual(len(d2.logs), 0)
+
+
+class torrent_error_alert:
+    """Minimal alert-shaped object for the log buffer tests."""
+
+    def __init__(self, message="connection failed"):
+        self.handle = object()
+        self._message = message
+
+    def message(self):
+        return self._message
+
+
+class TestTorrentAlertLog(unittest.TestCase):
+    def test_alert_entry_normalizes_message_and_level(self):
+        entry = _alert_log_entry(torrent_error_alert("line one\nline two"), "now")
+        self.assertEqual(entry["timestamp"], "now")
+        self.assertEqual(entry["level"], "ERROR")
+        self.assertEqual(entry["type"], "torrent_error")
+        self.assertEqual(entry["message"], "line one line two")
+
+    def test_worker_keeps_logs_separate_and_bounded_by_hash(self):
+        worker = SessionWorker({})
+        with patch("flux.core.session_worker.get_info_hashes", return_value=("hash-a", "", "")):
+            worker._record_alert_log(torrent_error_alert("first"))
+        with patch("flux.core.session_worker.get_info_hashes", return_value=("hash-b", "", "")):
+            worker._record_alert_log(torrent_error_alert("other"))
+
+        self.assertEqual([item["message"] for item in worker._torrent_logs["hash-a"]], ["first"])
+        self.assertEqual([item["message"] for item in worker._torrent_logs["hash-b"]], ["other"])
+
+        with patch("flux.core.session_worker.get_info_hashes", return_value=("hash-a", "", "")):
+            for index in range(_MAX_TORRENT_LOG_ENTRIES + 1):
+                worker._record_alert_log(torrent_error_alert(str(index)))
+        entries = worker._torrent_logs["hash-a"]
+        self.assertEqual(len(entries), _MAX_TORRENT_LOG_ENTRIES)
+        self.assertEqual(entries[-1]["message"], str(_MAX_TORRENT_LOG_ENTRIES))
 
 
 class _FakeHandle:

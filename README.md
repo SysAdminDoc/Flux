@@ -24,7 +24,7 @@ A clean, fast, privacy-focused BitTorrent client built with Python, PyQt6, and l
 ### UI
 - 6 dark themes: Flux Dark, Midnight Blue, Dracula, Nord, Solarized Dark, Monokai Pro
 - Real-time speed sparklines in toolbar with peak/average annotations
-- Detail panel with Overview, Files, Peers, Trackers, and Piece Map tabs
+- Detail panel with Overview, Files, Peers, Trackers, Piece Map, and per-torrent Log tabs
 - Sidebar with state filters, categories, and session info
 - Search/filter bar for quick torrent lookup
 - Column visibility toggle (right-click table header)

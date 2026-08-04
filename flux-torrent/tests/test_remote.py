@@ -97,6 +97,12 @@ class TestRemoteProtocol(unittest.TestCase):
             piece_length=16,
             dl_history=[5],
             ul_history=[6],
+            logs=[{
+                "timestamp": "2026-08-03 12:00:00",
+                "level": "INFO",
+                "type": "metadata_received",
+                "message": "metadata received",
+            }],
         )
         cls.controller = _Controller(stats, detail)
         cls.server = RemoteControlServer(
@@ -133,6 +139,7 @@ class TestRemoteProtocol(unittest.TestCase):
         self.assertEqual(detail.files[0].path, "test.bin")
         self.assertEqual(detail.peers[0].client, "client")
         self.assertEqual(detail.pieces, [2, 1, 0])
+        self.assertEqual(detail.logs[0]["type"], "metadata_received")
 
     def test_client_commands_use_existing_controller_boundary(self):
         client = RemoteSessionClient(self.endpoint)

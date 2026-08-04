@@ -55,6 +55,49 @@ _FLAG_DISABLE_LSD = getattr(_tf, 'disable_lsd', 0) if _tf else 0
 _PRIVATE_TRACKER_FLAGS = _FLAG_DISABLE_DHT | _FLAG_DISABLE_PEX | _FLAG_DISABLE_LSD
 
 _SCHEMA_VERSION = 2
+_MAX_TORRENT_LOG_ENTRIES = 250
+
+
+def _alert_info_hash(alert) -> str:
+    """Return the torrent identity attached to a libtorrent alert, if any."""
+    direct_hash = getattr(alert, "info_hash", "")
+    if direct_hash:
+        return str(direct_hash)
+
+    handle = getattr(alert, "handle", None)
+    if handle is None:
+        return ""
+    try:
+        info_hash, _, _ = get_info_hashes(handle)
+    except Exception:
+        return ""
+    return str(info_hash or "")
+
+
+def _alert_log_entry(alert, timestamp: str | None = None) -> dict:
+    """Convert a libtorrent alert into a small, GUI-safe log record."""
+    alert_type = type(alert).__name__.removesuffix("_alert")
+    type_lower = alert_type.lower()
+    if "error" in type_lower or "failed" in type_lower:
+        level = "ERROR" if "error" in type_lower else "WARN"
+    else:
+        level = "INFO"
+
+    message = ""
+    try:
+        message = str(alert.message() or "")
+    except Exception:
+        pass
+    message = " ".join(message.split())
+    if not message:
+        message = alert_type or "alert"
+
+    return {
+        "timestamp": timestamp or datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "level": level,
+        "type": alert_type or "alert",
+        "message": message,
+    }
 
 
 def _apply_private_tracker_profile(torrent: Torrent, cfg: dict):
@@ -101,6 +144,7 @@ class DetailData:
     piece_length: int = 0
     dl_history: list = field(default_factory=list)
     ul_history: list = field(default_factory=list)
+    logs: list = field(default_factory=list)
 
 
 class SessionWorker(QObject):
@@ -141,6 +185,7 @@ class SessionWorker(QObject):
         self._session_dl_history: list = []
         self._session_ul_history: list = []
         self._max_session_history = 300
+        self._torrent_logs: Dict[str, list] = {}
 
         self._focused_hash: str = ""
 
@@ -273,6 +318,7 @@ class SessionWorker(QObject):
             self._resume_db = None
 
         self._torrents.clear()
+        self._torrent_logs.clear()
         self._hook_runner.shutdown()
         self.stopped.emit()
         logger.info("SessionWorker stopped.")
@@ -428,6 +474,7 @@ class SessionWorker(QObject):
             self._session.remove_torrent(torrent.handle)
 
         del self._torrents[info_hash]
+        self._torrent_logs.pop(info_hash, None)
 
         if self._resume_db:
             try:
@@ -823,6 +870,16 @@ class SessionWorker(QObject):
 
     # --- Internal: Alert processing ---
 
+    def _record_alert_log(self, alert):
+        """Keep a bounded alert history for the torrent that emitted it."""
+        info_hash = _alert_info_hash(alert)
+        if not info_hash:
+            return
+        entries = self._torrent_logs.setdefault(info_hash, [])
+        entries.append(_alert_log_entry(alert))
+        if len(entries) > _MAX_TORRENT_LOG_ENTRIES:
+            del entries[:-_MAX_TORRENT_LOG_ENTRIES]
+
     def _process_alerts(self):
         if not self._session:
             return
@@ -834,6 +891,7 @@ class SessionWorker(QObject):
 
         for alert in alerts:
             try:
+                self._record_alert_log(alert)
                 atype = type(alert)
                 if atype == lt.torrent_finished_alert:
                     self._on_torrent_finished(alert)
@@ -969,6 +1027,9 @@ class SessionWorker(QObject):
                         piece_length=t.piece_length,
                         dl_history=t.speed_history_dl[:],
                         ul_history=t.speed_history_ul[:],
+                        logs=[entry.copy() for entry in self._torrent_logs.get(
+                            self._focused_hash, []
+                        )],
                     )
                     self.detail_updated.emit(detail)
                 except Exception as e:
