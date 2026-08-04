@@ -18,6 +18,8 @@ All notable changes to Flux will be documented in this file.
   payloads and redacted delivery status.
 - Added Tools > Export Session Stats with rolling-history CSV and JSON output for Grafana-style
   dashboards.
+- Added an opt-in `flux.plugins` Python entry-point SDK with asynchronous lifecycle dispatch and
+  archive extraction, completion move, and tracker announce logger examples.
 - Added conservative smart re-checking: unchanged files skip hashing, changed files validate only
   overlapping v1 pieces, and unsafe or unsupported cases fall back to libtorrent's full verifier.
 - Added scheduled IP blocklist refresh with HTTP(S) mirror failover, bounded parsing, gzip support,

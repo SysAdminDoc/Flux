@@ -43,6 +43,10 @@ class TestSettings(unittest.TestCase):
         self.assertFalse(self.settings.get("webhook_enabled"))
         self.assertEqual(self.settings.get("webhook_url"), "")
         self.assertEqual(self.settings.get("webhook_events"), ["on_finish"])
+        self.assertFalse(self.settings.get("plugins_enabled"))
+        self.assertFalse(self.settings.get("plugin_include_examples"))
+        self.assertEqual(self.settings.get("plugin_allowlist"), [])
+        self.assertEqual(self.settings.get("plugin_config"), {})
 
     def test_i2p_settings_are_validated(self):
         self.assertEqual(build_i2p_settings({}), {})

@@ -64,6 +64,7 @@ from flux.core.automation import (
 )
 from flux.core.peer_filter import PeerFilter
 from flux.core.peer_reputation import PeerReputationStore
+from flux.core.plugins import PluginManager
 from flux.core.script_hooks import ScriptHookRunner
 from flux.core.tracker_proxy import TrackerProxyManager
 from flux.core.webhooks import build_webhook_request, send_webhook
@@ -217,6 +218,8 @@ class SessionWorker(QObject):
         self._peer_reputation = PeerReputationStore(self._peer_reputation_path)
         self._hook_runner = ScriptHookRunner()
         self._hook_runner.configure(self._cfg.get("script_hooks", []))
+        self._plugin_manager = PluginManager()
+        self._configure_plugins()
         self._resume_db: Optional[sqlite3.Connection] = None
         self._ip_filter: Optional[lt.ip_filter] = None
         self._dynamic_banned_ips: set[str] = set()
@@ -389,6 +392,7 @@ class SessionWorker(QObject):
         self._torrents.clear()
         self._torrent_logs.clear()
         self._hook_runner.shutdown()
+        self._plugin_manager.shutdown()
         self.stopped.emit()
         logger.info("SessionWorker stopped.")
 
@@ -913,6 +917,7 @@ class SessionWorker(QObject):
             self._peer_reputation_path = reputation_path
             self._peer_reputation = PeerReputationStore(reputation_path)
         self._hook_runner.configure(self._cfg.get("script_hooks", []))
+        self._configure_plugins()
         self._load_ip_blocklist()
         self._check_blocklist_refresh()
         for torrent in self._torrents.values():
@@ -926,6 +931,21 @@ class SessionWorker(QObject):
     def _reputation_path(cfg: dict) -> Path:
         configured = str(cfg.get("peer_reputation_path", "") or "").strip()
         return Path(configured) if configured else Path.home() / ".flux-torrent" / "peer-reputation.json"
+
+    def _configure_plugins(self):
+        """Apply opt-in plugin settings without importing plugin code when disabled."""
+        allowlist = self._cfg.get("plugin_allowlist", [])
+        if not isinstance(allowlist, list):
+            allowlist = []
+        plugin_config = self._cfg.get("plugin_config", {})
+        if not isinstance(plugin_config, dict):
+            plugin_config = {}
+        self._plugin_manager.configure(
+            enabled=bool(self._cfg.get("plugins_enabled", False)),
+            allowlist=allowlist,
+            plugin_config=plugin_config,
+            include_examples=bool(self._cfg.get("plugin_include_examples", False)),
+        )
 
     @staticmethod
     def _alert_peer_ip(alert) -> str:
@@ -1043,6 +1063,7 @@ class SessionWorker(QObject):
         info = self._torrent_info(torrent, error)
         self._hook_runner.fire(event, info)
         self._queue_webhook(event, info)
+        self._plugin_manager.dispatch(event, info)
 
     @staticmethod
     def _torrent_info(torrent: Torrent, error: str = "") -> dict:
@@ -1101,6 +1122,31 @@ class SessionWorker(QObject):
         else:
             logger.warning("Webhook delivery failed: %s", result.error or "request error")
             self.webhook_status.emit(False, f"Webhook failed for {torrent_name}")
+
+    def _dispatch_tracker_plugin(self, alert):
+        """Send tracker alert metadata to plugins without exposing libtorrent objects."""
+        alert_type = type(alert).__name__.lower()
+        if "tracker_" not in alert_type:
+            return
+        info_hash = _alert_info_hash(alert)
+        torrent = self._torrents.get(info_hash)
+        if not torrent:
+            return
+        tracker_url = getattr(alert, "url", "")
+        if callable(tracker_url):
+            try:
+                tracker_url = tracker_url()
+            except Exception:
+                tracker_url = ""
+        self._plugin_manager.dispatch(
+            "on_tracker_announce",
+            self._torrent_info(torrent),
+            metadata={
+                "alert_type": alert_type,
+                "tracker_url": str(tracker_url or ""),
+                "message": _alert_log_entry(alert)["message"],
+            },
+        )
 
     # --- Internal: Resume DB ---
 
@@ -1370,6 +1416,7 @@ class SessionWorker(QObject):
             try:
                 self._record_alert_log(alert)
                 self._record_peer_reputation_alert(alert)
+                self._dispatch_tracker_plugin(alert)
                 atype = type(alert)
                 if atype == lt.torrent_finished_alert:
                     if self._cfg.get("integrity_manifest_auto", False):

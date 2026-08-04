@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "flux-torrent"
+version = "1.0.0"
+description = "Privacy-focused BitTorrent client with an entry-point plugin SDK"
+requires-python = ">=3.10"
+
+[project.entry-points."flux.plugins"]
+auto_extract = "flux.plugins.auto_extract:AutoExtractPlugin"
+post_complete_move = "flux.plugins.post_complete_move:PostCompleteMovePlugin"
+tracker_announce_logger = "flux.plugins.tracker_announce_logger:TrackerAnnounceLoggerPlugin"
+
+[tool.setuptools.packages.find]
+include = ["flux*"]

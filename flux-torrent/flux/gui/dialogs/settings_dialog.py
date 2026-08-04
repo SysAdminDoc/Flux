@@ -704,6 +704,35 @@ class SettingsDialog(QDialog):
         webhook_layout.addWidget(webhook_hint, 2, 0, 1, 3)
         layout.addWidget(webhook_group)
 
+        plugin_group = QGroupBox("Plugin SDK")
+        plugin_layout = QGridLayout(plugin_group)
+        plugin_layout.setSpacing(8)
+        plugins_enabled = QCheckBox("Enable installed Flux plugins")
+        self._widgets["plugins_enabled"] = plugins_enabled
+        plugin_layout.addWidget(plugins_enabled, 0, 0, 1, 3)
+        include_examples = QCheckBox("Load the three checked-in example plugins")
+        self._widgets["plugin_include_examples"] = include_examples
+        plugin_layout.addWidget(include_examples, 1, 0, 1, 3)
+        plugin_layout.addWidget(QLabel("Allowlist (optional):"), 2, 0)
+        allowlist = QLineEdit()
+        allowlist.setPlaceholderText("auto-extract, post-complete-move, tracker-announce-logger")
+        self._widgets["plugin_allowlist"] = allowlist
+        plugin_layout.addWidget(allowlist, 2, 1, 1, 2)
+        plugin_layout.addWidget(QLabel("Plugin configuration JSON:"), 3, 0, Qt.AlignmentFlag.AlignTop)
+        plugin_config = QPlainTextEdit()
+        plugin_config.setPlaceholderText(
+            '{"post-complete-move":{"enabled":true,"destination":"D:/Ready","rename":"{category}-{name}"}}'
+        )
+        plugin_config.setMaximumHeight(105)
+        self._widgets["plugin_config"] = plugin_config
+        plugin_layout.addWidget(plugin_config, 3, 1, 1, 2)
+        plugin_hint = QLabel(
+            "Plugins run asynchronously from Python entry points. Examples that move or extract files are opt-in per plugin configuration."
+        )
+        plugin_hint.setWordWrap(True)
+        plugin_layout.addWidget(plugin_hint, 4, 0, 1, 3)
+        layout.addWidget(plugin_group)
+
         # Trackers
         tracker_group = QGroupBox("Trackers")
         trg = QVBoxLayout(tracker_group)
@@ -1102,6 +1131,15 @@ class SettingsDialog(QDialog):
         ratio_action.setCurrentIndex(max(0, action_index))
         self._widgets["webhook_enabled"].setChecked(s.get("webhook_enabled", False))
         self._widgets["webhook_url"].setText(s.get("webhook_url", ""))
+        self._widgets["plugins_enabled"].setChecked(s.get("plugins_enabled", False))
+        self._widgets["plugin_include_examples"].setChecked(
+            s.get("plugin_include_examples", False)
+        )
+        allowlist = s.get("plugin_allowlist", []) or []
+        self._widgets["plugin_allowlist"].setText(", ".join(str(item) for item in allowlist))
+        self._widgets["plugin_config"].setPlainText(json.dumps(
+            s.get("plugin_config", {}) or {}, indent=2
+        ))
         self._widgets["auto_update_trackers"].setChecked(s.get("auto_update_trackers", False))
         self._widgets["tracker_list_url"].setText(s.get("tracker_list_url", ""))
         self._widgets["label_rules"].setPlainText(json.dumps(
@@ -1260,6 +1298,17 @@ class SettingsDialog(QDialog):
         )
         s.set("webhook_enabled", self._widgets["webhook_enabled"].isChecked())
         s.set("webhook_url", self._widgets["webhook_url"].text().strip())
+        s.set("plugins_enabled", self._widgets["plugins_enabled"].isChecked())
+        s.set("plugin_include_examples", self._widgets["plugin_include_examples"].isChecked())
+        s.set(
+            "plugin_allowlist",
+            [item.strip() for item in self._widgets["plugin_allowlist"].text().split(",") if item.strip()],
+        )
+        try:
+            plugin_config = json.loads(self._widgets["plugin_config"].toPlainText() or "{}")
+        except json.JSONDecodeError:
+            plugin_config = s.get("plugin_config", {}) or {}
+        s.set("plugin_config", plugin_config if isinstance(plugin_config, dict) else {})
         s.set("auto_update_trackers", self._widgets["auto_update_trackers"].isChecked())
         s.set("tracker_list_url", self._widgets["tracker_list_url"].text())
         try:

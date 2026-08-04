@@ -74,6 +74,7 @@ A clean, fast, privacy-focused BitTorrent client built with Python, PyQt6, and l
 - **Peer-colored piece map** - show which connected peers advertise each incomplete piece
 - **Completion webhooks** - send provider-aware HTTPS notifications to Discord or Telegram
 - **Session stats export** - save rolling transfer history as Grafana-friendly CSV or JSON
+- **Plugin SDK** - load asynchronous Python entry points for lifecycle and tracker integrations
 
 ## Requirements
 
@@ -113,6 +114,11 @@ Lifecycle script hooks are configured in Settings > Behavior as a JSON array. Ea
 an event (`on_add`, `on_finish`, `on_delete`, or `on_error`), a shell command, and optional timeout
 and JSON stdin/argument delivery settings. Hooks run asynchronously so they do not block torrent
 transfers or the UI.
+The Plugin SDK is configured in Settings > Behavior and uses the `flux.plugins` Python entry-point
+group. Flux ships opt-in examples for archive extraction, post-completion moves with `{name}`,
+`{category}`, and `{info_hash}` rename fields, and tracker announce JSONL logging. Enable the SDK
+and configure each example explicitly before it performs file or log I/O; third-party plugins run
+on the same background executor and receive detached lifecycle snapshots.
 RSS feeds are managed from Tools > RSS Feed Manager. A feed can use a JSON show-rule array with
 aliases, season/episode constraints, resolution and codec requirements, and a release-group
 allowlist. TMDB or TVDB credentials are optional; the Lookup button runs the selected provider in

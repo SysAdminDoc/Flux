@@ -113,6 +113,11 @@ class Settings:
         "show_speed_in_title": True,
         # Script hooks
         "script_hooks": [],
+        # Plugin SDK
+        "plugins_enabled": False,
+        "plugin_include_examples": False,
+        "plugin_allowlist": [],
+        "plugin_config": {},
         # RSS feeds
         "rss_feeds": [],
         # Remote Web UI / API
