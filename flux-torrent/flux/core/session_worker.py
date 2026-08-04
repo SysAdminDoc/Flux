@@ -23,6 +23,7 @@ import libtorrent as lt
 from PyQt6.QtCore import QObject, QTimer, pyqtSignal, pyqtSlot, QThread, QMetaObject, Qt
 
 from flux.core.torrent import Torrent, get_info_hashes
+from flux.core.activity_heatmap import normalize_heatmap, record_activity
 from flux.core.settings import (
     Settings,
     build_i2p_settings,
@@ -129,6 +130,7 @@ class SessionStats:
     dht_nodes: int = 0
     dl_history: list = field(default_factory=list)
     ul_history: list = field(default_factory=list)
+    activity_heatmap: list = field(default_factory=list)
     torrent_count: int = 0
     torrents: list = field(default_factory=list)  # List[TorrentSnapshot]
 
@@ -185,6 +187,8 @@ class SessionWorker(QObject):
         self._session_dl_history: list = []
         self._session_ul_history: list = []
         self._max_session_history = 300
+        self._activity_heatmap = normalize_heatmap(self._cfg.get("activity_heatmap", []))
+        self._last_activity_at: float | None = None
         self._torrent_logs: Dict[str, list] = {}
 
         self._focused_hash: str = ""
@@ -961,6 +965,22 @@ class SessionWorker(QObject):
 
     # --- Internal: Stats ---
 
+    def _record_activity(self, download_rate: int, upload_rate: int):
+        """Convert the latest rates into byte volume for the local hour cell."""
+        now = time.monotonic()
+        elapsed = 1.0
+        if self._last_activity_at is not None:
+            elapsed = min(5.0, max(0.0, now - self._last_activity_at))
+        self._last_activity_at = now
+        if elapsed <= 0:
+            return
+        record_activity(
+            self._activity_heatmap,
+            datetime.now(),
+            int(max(0, download_rate) * elapsed),
+            int(max(0, upload_rate) * elapsed),
+        )
+
     def _update_stats(self):
         if not self._session:
             return
@@ -987,6 +1007,8 @@ class SessionWorker(QObject):
             ul_rate = 0
             dht_count = 0
 
+        self._record_activity(dl_rate, ul_rate)
+
         # Snapshot all torrents
         snapshots = []
         auto_delete_hashes = []
@@ -1007,6 +1029,7 @@ class SessionWorker(QObject):
             dht_nodes=dht_count,
             dl_history=self._session_dl_history[:],
             ul_history=self._session_ul_history[:],
+            activity_heatmap=normalize_heatmap(self._activity_heatmap),
             torrent_count=len(self._torrents),
             torrents=snapshots,
         )

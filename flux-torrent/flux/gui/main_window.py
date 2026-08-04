@@ -9,6 +9,7 @@ import os
 import json
 import shutil
 import logging
+import time
 
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QFont, QColor, QDragEnterEvent, QDropEvent, QPalette
@@ -37,6 +38,7 @@ from flux.gui.dialogs.settings_dialog import SettingsDialog
 from flux.gui.dialogs.create_torrent import CreateTorrentDialog
 from flux.gui.dialogs.rss_manager import RSSManagerDialog
 from flux.gui.dialogs.cross_seed import CrossSeedDialog
+from flux.gui.dialogs.activity_heatmap import ActivityHeatmapDialog
 from flux.gui.themes import get_stylesheet, get_palette, set_current as set_theme, c as tc
 from flux.utils.formatters import format_speed, format_bytes
 
@@ -108,6 +110,7 @@ class MainWindow(QMainWindow):
         self._column_profiles = normalize_column_profiles(
             self._settings.get("column_profiles", {})
         )
+        self._last_activity_persist_at = 0.0
 
         self.setWindowTitle("Flux Torrent")
         self.setMinimumSize(1100, 700)
@@ -199,6 +202,9 @@ class MainWindow(QMainWindow):
 
         cross_seed_action = tools_menu.addAction("&Cross-seed Helper...")
         cross_seed_action.triggered.connect(self._on_open_cross_seed)
+
+        activity_action = tools_menu.addAction("&Activity Heatmap...")
+        activity_action.triggered.connect(self._on_open_activity_heatmap)
 
         # --- Help ---
         help_menu = menubar.addMenu("&Help")
@@ -821,6 +827,14 @@ class MainWindow(QMainWindow):
         dlg = CrossSeedDialog(default_path, self)
         dlg.exec()
 
+    def _on_open_activity_heatmap(self):
+        heatmap = []
+        if self._last_stats:
+            heatmap = self._last_stats.activity_heatmap
+        if not heatmap:
+            heatmap = self._settings.get("activity_heatmap", [])
+        ActivityHeatmapDialog(heatmap, self).exec()
+
     def _save_rss_config(self):
         if self._rss_monitor:
             self._settings.set("rss_feeds", self._rss_monitor.save_config())
@@ -1089,6 +1103,12 @@ class MainWindow(QMainWindow):
         """Main UI refresh - driven by worker stats signal (every second)."""
         self._last_stats = stats
 
+        if stats.activity_heatmap and (
+            time.monotonic() - self._last_activity_persist_at >= 60
+        ):
+            self._settings.set("activity_heatmap", stats.activity_heatmap)
+            self._last_activity_persist_at = time.monotonic()
+
         # Update torrent model from snapshots
         self._torrent_model.update_from_snapshots(stats.torrents)
 
@@ -1211,6 +1231,8 @@ class MainWindow(QMainWindow):
 
         self._capture_column_profile()
         self._settings.set("window_geometry", self.saveGeometry().toHex().data().decode())
+        if self._last_stats and self._last_stats.activity_heatmap:
+            self._settings.set("activity_heatmap", self._last_stats.activity_heatmap)
 
         # Stop RSS monitor
         if self._rss_monitor:

@@ -484,6 +484,7 @@ def _build_status_payload(controller: Any) -> dict[str, Any]:
             "torrent_count": int(getattr(stats, "torrent_count", len(torrents)) or len(torrents)),
             "download_history": list(getattr(stats, "dl_history", []) or []),
             "upload_history": list(getattr(stats, "ul_history", []) or []),
+            "activity_heatmap": list(getattr(stats, "activity_heatmap", []) or []),
         },
         "torrents": [_torrent_payload(snap) for snap in torrents],
         "updated_at": time.time(),

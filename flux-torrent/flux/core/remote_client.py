@@ -27,6 +27,7 @@ from urllib.request import (
 from PyQt6.QtCore import QObject, QMetaObject, QThread, QTimer, Qt, pyqtSignal, pyqtSlot
 
 from flux.core.session_worker import DetailData, SessionStats
+from flux.core.activity_heatmap import normalize_heatmap
 from flux.core.torrent import (
     TorrentFile,
     TorrentPeer,
@@ -145,6 +146,7 @@ class RemoteSessionClient:
             dht_nodes=_as_int(session.get("dht_nodes")),
             dl_history=_as_int_list(session.get("download_history")),
             ul_history=_as_int_list(session.get("upload_history")),
+            activity_heatmap=normalize_heatmap(session.get("activity_heatmap", [])),
             torrent_count=_as_int(session.get("torrent_count"), len(torrents)),
             torrents=torrents,
         )

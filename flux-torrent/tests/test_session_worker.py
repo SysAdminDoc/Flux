@@ -24,6 +24,7 @@ class TestSessionStats(unittest.TestCase):
         self.assertEqual(stats.torrent_count, 0)
         self.assertIsInstance(stats.dl_history, list)
         self.assertIsInstance(stats.ul_history, list)
+        self.assertIsInstance(stats.activity_heatmap, list)
         self.assertIsInstance(stats.torrents, list)
 
     def test_with_data(self):

@@ -85,6 +85,9 @@ class TestRemoteProtocol(unittest.TestCase):
             dht_nodes=9,
             dl_history=[1, 2],
             ul_history=[3, 4],
+            activity_heatmap=[
+                [{"download": 10, "upload": 2}] + [{"download": 0, "upload": 0}] * 23
+            ] + [[{"download": 0, "upload": 0}] * 24 for _ in range(6)],
             torrent_count=1,
             torrents=[snapshot],
         )
@@ -133,6 +136,7 @@ class TestRemoteProtocol(unittest.TestCase):
         self.assertEqual(stats.torrents[0].state, TorrentState.DOWNLOADING)
         self.assertEqual(stats.torrents[0].tags, ["hd"])
         self.assertEqual(len(stats.torrents[0].info_hash_v2), 64)
+        self.assertEqual(stats.activity_heatmap[0][0]["download"], 10)
 
         detail = client.fetch_detail("abc123")
         self.assertEqual(detail.info_hash, "abc123")

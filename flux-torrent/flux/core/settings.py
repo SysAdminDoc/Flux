@@ -92,6 +92,7 @@ class Settings:
         "column_widths": "",
         "column_order": "",
         "column_profiles": {},
+        "activity_heatmap": [],
         "sort_column": "added",
         "sort_order": "desc",
         "show_speed_in_title": True,
