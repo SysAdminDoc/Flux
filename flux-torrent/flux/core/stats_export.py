@@ -11,7 +11,6 @@ import time
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -127,6 +126,7 @@ def export_session_stats_json(stats, snapshots: list) -> str:
     """
     data = {
         "export_time": datetime.now().isoformat(),
+        "history_interval_seconds": 1,
         "session": {
             "download_rate": stats.download_rate,
             "upload_rate": stats.upload_rate,
@@ -135,6 +135,14 @@ def export_session_stats_json(stats, snapshots: list) -> str:
             "download_history": stats.dl_history,
             "upload_history": stats.ul_history,
         },
+        "history": [
+            {
+                "age_seconds": len(stats.dl_history) - index - 1,
+                "download_rate": stats.dl_history[index],
+                "upload_rate": stats.ul_history[index] if index < len(stats.ul_history) else 0,
+            }
+            for index in range(len(stats.dl_history))
+        ],
         "torrents": [],
     }
 
@@ -155,6 +163,31 @@ def export_session_stats_json(stats, snapshots: list) -> str:
             pass
 
     return json.dumps(data, indent=2)
+
+
+def export_session_stats_csv(stats) -> str:
+    """Export the rolling one-second transfer history as Grafana-friendly CSV."""
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow([
+        "Age (seconds)",
+        "Download Rate (bytes/s)",
+        "Upload Rate (bytes/s)",
+        "DHT Nodes",
+        "Torrent Count",
+    ])
+    download_history = list(stats.dl_history or [])
+    upload_history = list(stats.ul_history or [])
+    sample_count = max(len(download_history), len(upload_history))
+    for index in range(sample_count):
+        writer.writerow([
+            sample_count - index - 1,
+            download_history[index] if index < len(download_history) else 0,
+            upload_history[index] if index < len(upload_history) else 0,
+            stats.dht_nodes,
+            stats.torrent_count,
+        ])
+    return output.getvalue()
 
 
 def save_export(content: str, filepath: str) -> bool:

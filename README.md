@@ -73,6 +73,7 @@ A clean, fast, privacy-focused BitTorrent client built with Python, PyQt6, and l
   per-peer transfer cap instead of banning repeat offenders
 - **Peer-colored piece map** - show which connected peers advertise each incomplete piece
 - **Completion webhooks** - send provider-aware HTTPS notifications to Discord or Telegram
+- **Session stats export** - save rolling transfer history as Grafana-friendly CSV or JSON
 
 ## Requirements
 
@@ -156,6 +157,9 @@ peer color.
 Completion webhooks are configured in Settings > Behavior. Paste a Discord webhook URL or a full
 Telegram `sendMessage` URL (including `chat_id`); Flux accepts HTTPS endpoints only and sends from a
 background worker so a slow provider cannot interrupt transfers.
+Tools > Export Session Stats saves the current rolling one-second transfer history. CSV is shaped
+for time-series ingestion, while JSON includes the same history plus current session and torrent
+snapshots.
 
 ## Usage
 

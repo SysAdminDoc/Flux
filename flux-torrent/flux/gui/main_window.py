@@ -19,7 +19,7 @@ from PyQt6.QtWidgets import (
     QStatusBar, QFrame, QApplication, QMessageBox,
     QInputDialog, QMenu, QSystemTrayIcon, QStyle, QAbstractItemView,
     QSizePolicy, QLineEdit, QDialog, QFormLayout,
-    QSpinBox, QDialogButtonBox
+    QSpinBox, QDialogButtonBox, QFileDialog
 )
 
 from flux.core.session_worker import ThreadedSession, SessionStats, DetailData
@@ -42,6 +42,7 @@ from flux.gui.dialogs.cross_seed import CrossSeedDialog
 from flux.gui.dialogs.activity_heatmap import ActivityHeatmapDialog
 from flux.gui.themes import get_stylesheet, get_palette, set_current as set_theme, c as tc
 from flux.utils.formatters import format_speed, format_bytes
+from flux.core.stats_export import export_session_stats_csv, export_session_stats_json, save_export
 
 logger = logging.getLogger(__name__)
 
@@ -206,6 +207,10 @@ class MainWindow(QMainWindow):
 
         activity_action = tools_menu.addAction("&Activity Heatmap...")
         activity_action.triggered.connect(self._on_open_activity_heatmap)
+
+        tools_menu.addSeparator()
+        export_action = tools_menu.addAction("Export Session &Stats...")
+        export_action.triggered.connect(self._on_export_stats)
 
         # --- Help ---
         help_menu = menubar.addMenu("&Help")
@@ -851,6 +856,26 @@ class MainWindow(QMainWindow):
         if not heatmap:
             heatmap = self._settings.get("activity_heatmap", [])
         ActivityHeatmapDialog(heatmap, self).exec()
+
+    def _on_export_stats(self):
+        """Write rolling session history in CSV or JSON format."""
+        path, selected_filter = QFileDialog.getSaveFileName(
+            self,
+            "Export Session Stats",
+            "flux-session-stats.json",
+            "JSON session stats (*.json);;CSV session history (*.csv)",
+        )
+        if not path:
+            return
+        stats = self._last_stats or SessionStats()
+        if selected_filter.startswith("CSV") or path.lower().endswith(".csv"):
+            content = export_session_stats_csv(stats)
+        else:
+            content = export_session_stats_json(stats, stats.torrents)
+        if save_export(content, path):
+            self._status_label.setText(f"Stats exported to {path}")
+        else:
+            QMessageBox.warning(self, "Export Failed", "Flux could not write the selected stats file.")
 
     def _save_rss_config(self):
         if self._rss_monitor:

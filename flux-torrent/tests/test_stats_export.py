@@ -9,11 +9,11 @@ import tempfile
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import unittest
-from unittest.mock import MagicMock
 from flux.core.stats_export import (
     export_torrent_list_csv,
     export_torrent_list_json,
     export_session_stats_json,
+    export_session_stats_csv,
     save_export,
 )
 
@@ -132,6 +132,14 @@ class TestExportSessionStats(unittest.TestCase):
         self.assertEqual(data["session"]["download_rate"], 1024 * 500)
         self.assertEqual(data["session"]["dht_nodes"], 150)
         self.assertEqual(len(data["session"]["download_history"]), 5)
+        self.assertEqual(data["history"][0]["age_seconds"], 4)
+
+    def test_session_csv_contains_rolling_history(self):
+        result = export_session_stats_csv(MockSessionStats())
+        rows = list(csv.reader(io.StringIO(result)))
+        self.assertEqual(rows[0][0], "Age (seconds)")
+        self.assertEqual(rows[1][0], "4")
+        self.assertEqual(rows[-1][1:], ["500", "250", "150", "0"])
 
 
 class TestSaveExport(unittest.TestCase):
