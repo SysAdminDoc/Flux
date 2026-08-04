@@ -2,7 +2,7 @@
 
 All notable changes to Flux will be documented in this file.
 
-## Unreleased
+## [v1.1.0] - 2026-08-03
 
 - Added optional SHA-256 JSON sidecars for completed torrents, with a background hash executor,
   atomic publication, race detection, automatic completion generation, and a manual context action.

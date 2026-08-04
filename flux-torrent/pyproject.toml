@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "flux-torrent"
-version = "1.0.0"
+version = "1.1.0"
 description = "Privacy-focused BitTorrent client with an entry-point plugin SDK"
 requires-python = ">=3.10"
 

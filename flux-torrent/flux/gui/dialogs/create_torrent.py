@@ -118,7 +118,7 @@ class CreateWorker(QThread):
             if self.comment:
                 ct.set_comment(self.comment)
 
-            ct.set_creator("Flux Torrent 1.0")
+            ct.set_creator("Flux Torrent 1.1.0")
 
             if self.private:
                 ct.set_priv(True)

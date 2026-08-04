@@ -322,7 +322,7 @@ class TrackerAnnounceClient:
             sock.sendall((
                 f"GET {path} HTTP/1.1\r\n"
                 f"Host: {host_header}\r\n"
-                "User-Agent: FluxTorrent/1.0\r\n"
+                "User-Agent: FluxTorrent/1.1.0\r\n"
                 "Accept: */*\r\n"
                 "Connection: close\r\n\r\n"
             ).encode("ascii"))

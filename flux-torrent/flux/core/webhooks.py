@@ -80,7 +80,7 @@ def build_webhook_request(url: str, event: str, torrent: dict) -> Request:
     return Request(
         str(url).strip(),
         data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
-        headers={"Content-Type": "application/json", "User-Agent": "FluxTorrent/1.0"},
+        headers={"Content-Type": "application/json", "User-Agent": "FluxTorrent/1.1.0"},
         method="POST",
     )
 

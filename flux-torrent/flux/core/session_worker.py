@@ -268,7 +268,7 @@ class SessionWorker(QObject):
         logger.info("SessionWorker initializing on thread...")
 
         settings = {
-            'user_agent': 'FluxTorrent/1.0',
+            'user_agent': 'FluxTorrent/1.1.0',
             'peer_fingerprint': '-FX1000-',
             'listen_interfaces': build_listen_interfaces(
                 self._vpn_bind_address, self._cfg.get("listen_port", 6881)

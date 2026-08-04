@@ -337,7 +337,7 @@ class ShowLookupClient:
 
     def _search_tmdb(self, query: str) -> List[ShowLookupResult]:
         params = {"query": query, "include_adult": "false", "language": "en-US"}
-        headers = {"User-Agent": "FluxTorrent/1.0 RSS"}
+        headers = {"User-Agent": "FluxTorrent/1.1.0 RSS"}
         token = self.api_key
         if token.lower().startswith("bearer ") or token.count(".") == 2:
             headers["Authorization"] = token if token.lower().startswith("bearer ") else f"Bearer {token}"
@@ -355,7 +355,7 @@ class ShowLookupClient:
             login = Request(
                 "https://api4.thetvdb.com/v4/login",
                 data=json.dumps({"apikey": self.api_key, "pin": self.pin}).encode(),
-                headers={"Content-Type": "application/json", "User-Agent": "FluxTorrent/1.0 RSS"},
+                headers={"Content-Type": "application/json", "User-Agent": "FluxTorrent/1.1.0 RSS"},
             )
             login_payload = self._request_json(login)
             self._tvdb_token = str(login_payload.get("data", {}).get("token", ""))
@@ -365,7 +365,7 @@ class ShowLookupClient:
             "https://api4.thetvdb.com/v4/search?" + urlencode({"query": query, "type": "series"}),
             headers={
                 "Authorization": f"Bearer {self._tvdb_token}",
-                "User-Agent": "FluxTorrent/1.0 RSS",
+                "User-Agent": "FluxTorrent/1.1.0 RSS",
             },
         )
         payload = self._request_json(request)
@@ -573,7 +573,7 @@ def _text_ns(parent, tag: str) -> str:
 
 def _fetch_feed_sync(url: str) -> str:
     """Fetch feed XML on a background thread (called via ThreadPoolExecutor)."""
-    req = Request(url, headers={'User-Agent': 'FluxTorrent/1.0 RSS'})
+    req = Request(url, headers={'User-Agent': 'FluxTorrent/1.1.0 RSS'})
     with urlopen(req, timeout=30) as resp:
         return resp.read().decode('utf-8', errors='replace')
 

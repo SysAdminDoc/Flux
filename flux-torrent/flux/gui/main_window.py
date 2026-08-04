@@ -819,7 +819,7 @@ class MainWindow(QMainWindow):
     def _on_about(self):
         QMessageBox.about(
             self, "About Flux Torrent",
-            "Flux Torrent Client v1.0\n\n"
+            "Flux Torrent Client v1.1.0\n\n"
             "A clean, fast, privacy-focused BitTorrent client.\n\n"
             "Built with Python, PyQt6, and libtorrent."
         )

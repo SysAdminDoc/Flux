@@ -111,7 +111,7 @@ class TorrentSession(QObject):
         logger.info("Starting Flux torrent session...")
 
         settings = {
-            'user_agent': 'FluxTorrent/1.0',
+            'user_agent': 'FluxTorrent/1.1.0',
             'peer_fingerprint': '-FX1000-',
             'listen_interfaces': '0.0.0.0:{p},[::0]:{p}'.format(
                 p=self._settings.get("listen_port", 6881)),

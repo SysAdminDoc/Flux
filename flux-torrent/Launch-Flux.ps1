@@ -51,7 +51,7 @@ Write-Host "  \ \  __\\ \ \__\ \ \_\ \_\ \_\ \ \" -ForegroundColor Blue
 Write-Host "   \ \_\   \ \_____\ \_____/\_____\ \_\" -ForegroundColor Blue
 Write-Host "    \/_/    \/_____/\/_____/\/_____/\/_/" -ForegroundColor DarkBlue
 Write-Host ""
-Write-Host "   Flux Torrent Client v1.0" -ForegroundColor DarkCyan
+Write-Host "   Flux Torrent Client v1.1.0" -ForegroundColor DarkCyan
 Write-Host "   Premium. Debloated. Fast." -ForegroundColor DarkGray
 Write-Host ""
 

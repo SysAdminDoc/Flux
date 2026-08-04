@@ -100,7 +100,7 @@ def main():
 
     # Fix Windows DLL loading before any libtorrent import
     try:
-        from flux import dll_fix
+        from flux import dll_fix  # noqa: F401  # import applies DLL setup side effects
     except Exception:
         pass
 
@@ -144,7 +144,7 @@ def main():
 
     app.setWindowIcon(branding_icon)
     app.setApplicationName("Flux Torrent")
-    app.setApplicationVersion("1.0.0")
+    app.setApplicationVersion("1.1.0")
     app.setOrganizationName("Flux")
 
     try:
