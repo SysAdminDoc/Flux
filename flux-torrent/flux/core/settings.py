@@ -35,6 +35,8 @@ class Settings:
         "ip_blocklist_auto_refresh": False,
         "ip_blocklist_urls": [],
         "ip_blocklist_refresh_hours": 24,
+        "integrity_manifest_auto": False,
+        "integrity_manifest_dir": "",
         # Private-tracker profile
         "private_tracker_profile": False,
         "private_tracker_unchoke_slots": 4,

@@ -690,6 +690,28 @@ class SettingsDialog(QDialog):
         auto_delete_layout.addWidget(delete_files, 3, 0, 1, 4)
         layout.addWidget(auto_delete_group)
 
+        integrity_group = QGroupBox("SHA-256 integrity manifests")
+        integrity_layout = QGridLayout(integrity_group)
+        integrity_layout.setSpacing(8)
+        integrity_auto = QCheckBox("Generate a JSON sidecar when a torrent completes")
+        self._widgets["integrity_manifest_auto"] = integrity_auto
+        integrity_layout.addWidget(integrity_auto, 0, 0, 1, 3)
+        integrity_layout.addWidget(QLabel("Manifest directory:"), 1, 0)
+        integrity_dir = QLineEdit()
+        integrity_dir.setPlaceholderText("Blank = beside the torrent's save path")
+        self._widgets["integrity_manifest_dir"] = integrity_dir
+        integrity_layout.addWidget(integrity_dir, 1, 1)
+        integrity_browse = QPushButton("Browse...")
+        integrity_browse.clicked.connect(lambda: self._browse_folder(integrity_dir))
+        integrity_layout.addWidget(integrity_browse, 1, 2)
+        integrity_hint = QLabel(
+            "Manual generation is available from a completed torrent's context menu. "
+            "Files changing during hashing are rejected without replacing the previous manifest."
+        )
+        integrity_hint.setWordWrap(True)
+        integrity_layout.addWidget(integrity_hint, 2, 0, 1, 3)
+        layout.addWidget(integrity_group)
+
         schedule_group = QGroupBox("Per-torrent start/stop schedules")
         schedule_layout = QVBoxLayout(schedule_group)
         schedule_layout.addWidget(QLabel(
@@ -985,6 +1007,12 @@ class SettingsDialog(QDialog):
             s.get("auto_delete_exclude_label", "archive")
         )
         self._widgets["auto_delete_files"].setChecked(s.get("auto_delete_files", True))
+        self._widgets["integrity_manifest_auto"].setChecked(
+            s.get("integrity_manifest_auto", False)
+        )
+        self._widgets["integrity_manifest_dir"].setText(
+            s.get("integrity_manifest_dir", "")
+        )
         self._widgets["torrent_schedules"].setPlainText(json.dumps(
             s.get("torrent_schedules", {}) or {}, indent=2
         ))
@@ -1114,6 +1142,8 @@ class SettingsDialog(QDialog):
         s.set("auto_delete_seed_days", self._widgets["auto_delete_seed_days"].value())
         s.set("auto_delete_exclude_label", self._widgets["auto_delete_exclude_label"].text().strip())
         s.set("auto_delete_files", self._widgets["auto_delete_files"].isChecked())
+        s.set("integrity_manifest_auto", self._widgets["integrity_manifest_auto"].isChecked())
+        s.set("integrity_manifest_dir", self._widgets["integrity_manifest_dir"].text().strip())
         try:
             schedules = json.loads(self._widgets["torrent_schedules"].toPlainText() or "{}")
         except json.JSONDecodeError:

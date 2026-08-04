@@ -40,6 +40,11 @@ from flux.core.smart_recheck import (
     read_piece_data,
     verify_pieces,
 )
+from flux.core.integrity import (
+    IntegrityResult,
+    build_manifest_plan,
+    generate_manifest,
+)
 from flux.core.settings import (
     Settings,
     build_i2p_settings,
@@ -187,6 +192,8 @@ class SessionWorker(QObject):
     blocklist_ready = pyqtSignal(object)  # BlocklistFetchResult
     blocklist_status = pyqtSignal(bool, str)  # success, user-facing status
     recheck_status = pyqtSignal(str, str)  # info hash, user-facing status
+    integrity_ready = pyqtSignal(object)  # (info hash, IntegrityResult)
+    integrity_status = pyqtSignal(bool, str)  # success/progress, user-facing status
     started = pyqtSignal()
     stopped = pyqtSignal()
 
@@ -223,6 +230,11 @@ class SessionWorker(QObject):
         self._blocklist_next_refresh_at = time.monotonic()
         self._blocklist_refresh_generation = 0
         self.blocklist_ready.connect(self._apply_blocklist_result)
+        self._integrity_executor = ThreadPoolExecutor(
+            max_workers=1, thread_name_prefix="FluxIntegrity"
+        )
+        self._integrity_futures = {}
+        self.integrity_ready.connect(self._apply_integrity_result)
 
         self._focused_hash: str = ""
 
@@ -347,6 +359,7 @@ class SessionWorker(QObject):
         self._tracker_proxy_manager.close()
 
         self._blocklist_executor.shutdown(wait=True, cancel_futures=True)
+        self._integrity_executor.shutdown(wait=True, cancel_futures=True)
 
         if self._session:
             self._session.pause()
@@ -676,6 +689,78 @@ class SessionWorker(QObject):
                     torrent.handle.resume()
                 except Exception:
                     pass
+
+    @pyqtSlot(str)
+    def generate_integrity_manifest(self, info_hash: str):
+        torrent = self._torrents.get(info_hash)
+        if not torrent:
+            self.integrity_status.emit(False, "Integrity manifest failed: torrent unavailable")
+            return
+        try:
+            if float(torrent.progress) < 0.999999:
+                self.integrity_status.emit(
+                    False, "Integrity manifest requires a completed torrent"
+                )
+                return
+        except (TypeError, ValueError):
+            self.integrity_status.emit(False, "Integrity manifest failed: invalid progress")
+            return
+        self._queue_integrity_manifest(info_hash, torrent)
+
+    def _queue_integrity_manifest(self, info_hash: str, torrent: Torrent):
+        existing = self._integrity_futures.get(info_hash)
+        if existing is not None and not existing.done():
+            self.integrity_status.emit(True, "Integrity manifest is already being generated")
+            return
+        try:
+            torrent_info = torrent.handle.torrent_file()
+            if not torrent_info:
+                raise ValueError("torrent metadata is unavailable")
+            plan = build_manifest_plan(
+                torrent_info,
+                torrent.save_path,
+                info_hash,
+                torrent.name,
+                self._cfg.get("integrity_manifest_dir", ""),
+            )
+        except (OSError, TypeError, ValueError) as exc:
+            self.integrity_status.emit(False, f"Integrity manifest failed: {exc}")
+            return
+        try:
+            future = self._integrity_executor.submit(generate_manifest, plan)
+            self._integrity_futures[info_hash] = future
+            future.add_done_callback(
+                lambda completed, info_hash=info_hash: self._integrity_fetch_done(
+                    info_hash, completed
+                )
+            )
+            self.integrity_status.emit(
+                True, f"Generating SHA-256 manifest for {torrent.name}..."
+            )
+        except Exception as exc:
+            self._integrity_futures.pop(info_hash, None)
+            self.integrity_status.emit(False, f"Integrity manifest failed: {exc}")
+
+    def _integrity_fetch_done(self, info_hash: str, future):
+        try:
+            result = future.result()
+        except Exception as exc:
+            result = IntegrityResult(success=False, error=str(exc))
+        self.integrity_ready.emit((info_hash, result))
+
+    @pyqtSlot(object)
+    def _apply_integrity_result(self, payload):
+        info_hash, result = payload
+        self._integrity_futures.pop(info_hash, None)
+        if not result.success:
+            self.integrity_status.emit(
+                False, f"Integrity manifest failed: {result.error}"
+            )
+            return
+        self.integrity_status.emit(
+            True,
+            f"SHA-256 manifest written: {result.output_path} ({result.file_count} files)",
+        )
 
     @pyqtSlot(str)
     def force_reannounce(self, info_hash: str):
@@ -1135,6 +1220,11 @@ class SessionWorker(QObject):
                 self._record_alert_log(alert)
                 atype = type(alert)
                 if atype == lt.torrent_finished_alert:
+                    if self._cfg.get("integrity_manifest_auto", False):
+                        ih, _, _ = get_info_hashes(alert.handle)
+                        torrent = self._torrents.get(ih)
+                        if torrent:
+                            self._queue_integrity_manifest(ih, torrent)
                     self._on_torrent_finished(alert)
                 elif atype == lt.torrent_error_alert:
                     ih, _, _ = get_info_hashes(alert.handle)

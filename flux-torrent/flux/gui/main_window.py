@@ -454,6 +454,8 @@ class MainWindow(QMainWindow):
         self._ctx_force_resume.triggered.connect(self._on_force_resume)
         self._ctx_recheck = self._context_menu.addAction("Force Recheck")
         self._ctx_recheck.triggered.connect(self._on_recheck)
+        self._ctx_manifest = self._context_menu.addAction("Generate SHA-256 Manifest")
+        self._ctx_manifest.triggered.connect(self._on_generate_manifest)
         self._ctx_reannounce = self._context_menu.addAction("Force Reannounce")
         self._ctx_reannounce.triggered.connect(self._on_reannounce)
         self._context_menu.addSeparator()
@@ -538,6 +540,8 @@ class MainWindow(QMainWindow):
             w.blocklist_status.connect(self._on_blocklist_status)
         if hasattr(w, "recheck_status"):
             w.recheck_status.connect(self._on_recheck_status)
+        if hasattr(w, "integrity_status"):
+            w.integrity_status.connect(self._on_integrity_status)
 
         # Remote API -> worker
         self.remote_add_magnet_requested.connect(w.add_magnet)
@@ -971,6 +975,14 @@ class MainWindow(QMainWindow):
         for ih in self._get_selected_hashes():
             self._worker.force_recheck(ih)
 
+    def _on_generate_manifest(self):
+        generator = getattr(self._worker, "generate_integrity_manifest", None)
+        if generator is None:
+            self._status_label.setText("Integrity manifests are unavailable in remote client mode")
+            return
+        for ih in self._get_selected_hashes():
+            generator(ih)
+
     def _on_reannounce(self):
         for ih in self._get_selected_hashes():
             self._worker.force_reannounce(ih)
@@ -1226,6 +1238,16 @@ class MainWindow(QMainWindow):
         QTimer.singleShot(15000, self._clear_recheck_status_style)
 
     def _clear_recheck_status_style(self):
+        self._status_label.setStyleSheet("")
+
+    def _on_integrity_status(self, success: bool, message: str):
+        """Show manifest generation progress without interrupting the torrent view."""
+        self._status_label.setText(message)
+        color = "#22c55e" if success else "#ef4444"
+        self._status_label.setStyleSheet(f"color: {color}; font-weight: 700;")
+        QTimer.singleShot(15000, self._clear_integrity_status_style)
+
+    def _clear_integrity_status_style(self):
         self._status_label.setStyleSheet("")
 
     def _on_tracker_tested(self, info_hash: str, url: str, result: object):

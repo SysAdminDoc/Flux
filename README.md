@@ -44,6 +44,7 @@ A clean, fast, privacy-focused BitTorrent client built with Python, PyQt6, and l
 - **Create Torrent** - build .torrent files from local files/folders with configurable piece size
 - **RSS Feed Manager** - poll RSS/Atom feeds for new torrents with regex filtering and auto-download
 - **IP Blocklist** - import PeerGuardian-format blocklists with scheduled mirror refresh and failover
+- **SHA-256 integrity manifests** - generate atomic JSON sidecars for completed torrent files
 - **Bandwidth Scheduling** - time-based upload/download limits
 - **Peer Filtering** - auto-ban peers by client name patterns
 - **Remote Web UI / API** - optional HTTP/WebSocket control surface with qBittorrent-compatible
@@ -132,6 +133,10 @@ and control placeholders keep only the relevant tabs and groups visible while ed
 Force Recheck uses saved file size and modification-time fingerprints when available. Unchanged files
 finish immediately; changed files are mapped to the affected pieces, while missing metadata, missing
 storage, unsupported v2-only hashes, or an unsafe read fall back to libtorrent's full verifier.
+For completed torrents, use Generate SHA-256 Manifest from the context menu or enable automatic
+generation in Settings > Behavior. Manifests include relative file paths, sizes, SHA-256 digests,
+the torrent identity, and a UTC generation timestamp; files that change during hashing are rejected
+without replacing the previous sidecar.
 
 ## Usage
 

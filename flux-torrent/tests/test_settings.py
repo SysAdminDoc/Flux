@@ -31,6 +31,8 @@ class TestSettings(unittest.TestCase):
         self.assertFalse(self.settings.get("vpn_kill_switch"))
         self.assertFalse(self.settings.get("ip_blocklist_auto_refresh"))
         self.assertEqual(self.settings.get("ip_blocklist_refresh_hours"), 24)
+        self.assertFalse(self.settings.get("integrity_manifest_auto"))
+        self.assertEqual(self.settings.get("integrity_manifest_dir"), "")
 
     def test_i2p_settings_are_validated(self):
         self.assertEqual(build_i2p_settings({}), {})
