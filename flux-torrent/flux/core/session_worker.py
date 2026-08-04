@@ -33,6 +33,13 @@ from flux.core.blocklist import (
     parse_blocklist_ranges,
     write_blocklist_cache,
 )
+from flux.core.smart_recheck import (
+    FileFingerprint,
+    build_smart_recheck_plan,
+    capture_file_fingerprints,
+    read_piece_data,
+    verify_pieces,
+)
 from flux.core.settings import (
     Settings,
     build_i2p_settings,
@@ -179,6 +186,7 @@ class SessionWorker(QObject):
     vpn_status = pyqtSignal(bool, str)  # available, user-facing status
     blocklist_ready = pyqtSignal(object)  # BlocklistFetchResult
     blocklist_status = pyqtSignal(bool, str)  # success, user-facing status
+    recheck_status = pyqtSignal(str, str)  # info hash, user-facing status
     started = pyqtSignal()
     stopped = pyqtSignal()
 
@@ -187,6 +195,8 @@ class SessionWorker(QObject):
         self._cfg = cfg  # plain dict snapshot (thread-safe, no SQLite)
         self._session: Optional[lt.session] = None
         self._torrents: Dict[str, Torrent] = {}
+        self._recheck_fingerprints: Dict[str, tuple[FileFingerprint, ...]] = {}
+        self._full_rechecks_pending: set[str] = set()
         self._peer_filter = PeerFilter()
         self._hook_runner = ScriptHookRunner()
         self._hook_runner.configure(self._cfg.get("script_hooks", []))
@@ -505,6 +515,8 @@ class SessionWorker(QObject):
             self._session.remove_torrent(torrent.handle)
 
         del self._torrents[info_hash]
+        self._recheck_fingerprints.pop(info_hash, None)
+        self._full_rechecks_pending.discard(info_hash)
         self._torrent_logs.pop(info_hash, None)
 
         if self._resume_db:
@@ -542,8 +554,128 @@ class SessionWorker(QObject):
     @pyqtSlot(str)
     def force_recheck(self, info_hash: str):
         t = self._torrents.get(info_hash)
-        if t:
-            t.force_recheck()
+        if not t:
+            return
+        self._smart_recheck(info_hash, t)
+
+    def _remember_recheck_fingerprint(self, info_hash: str, torrent: Torrent):
+        try:
+            torrent_info = torrent.handle.torrent_file()
+            if torrent_info:
+                self._recheck_fingerprints[info_hash] = capture_file_fingerprints(
+                    torrent_info, torrent.save_path
+                )
+        except Exception as exc:
+            logger.debug("Could not capture re-check baseline for %s: %s", info_hash, exc)
+
+    def _queue_full_recheck(self, info_hash: str, torrent: Torrent, reason: str):
+        self._full_rechecks_pending.add(info_hash)
+        torrent.force_recheck()
+        self.recheck_status.emit(info_hash, f"Full re-check started: {reason}")
+
+    @staticmethod
+    def _inject_piece(handle, piece: int, data: bytes) -> bool:
+        try:
+            flags_type = getattr(lt, "add_piece_flags_t", None)
+            flags = getattr(flags_type, "overwrite_existing", 0)
+            handle.add_piece(piece, data, flags)
+            return True
+        except Exception as exc:
+            logger.warning("Could not revalidate piece %s through libtorrent: %s", piece, exc)
+            return False
+
+    def _smart_recheck(self, info_hash: str, torrent: Torrent):
+        try:
+            torrent_info = torrent.handle.torrent_file()
+        except Exception:
+            torrent_info = None
+        if not torrent_info:
+            self._queue_full_recheck(info_hash, torrent, "torrent metadata is unavailable")
+            return
+
+        try:
+            plan = build_smart_recheck_plan(
+                torrent_info,
+                torrent.save_path,
+                self._recheck_fingerprints.get(info_hash),
+            )
+        except Exception as exc:
+            self._queue_full_recheck(info_hash, torrent, f"heuristic planning failed: {exc}")
+            return
+        if plan.requires_full_recheck:
+            self._queue_full_recheck(info_hash, torrent, plan.reason)
+            return
+        if plan.skip:
+            self.recheck_status.emit(info_hash, f"Smart re-check skipped: {plan.reason}")
+            return
+
+        was_paused = False
+        full_recheck_started = False
+        try:
+            try:
+                was_paused = bool(torrent.handle.status().paused)
+            except Exception:
+                was_paused = False
+            if not was_paused:
+                torrent.handle.pause()
+
+            try:
+                results = verify_pieces(torrent_info, torrent.save_path, plan.dirty_pieces)
+            except Exception as exc:
+                self._queue_full_recheck(info_hash, torrent, f"piece verification failed: {exc}")
+                full_recheck_started = True
+                return
+            unavailable = [result for result in results if not result.available or result.matches is None]
+            if unavailable:
+                self._queue_full_recheck(
+                    info_hash,
+                    torrent,
+                    f"{len(unavailable)} dirty piece(s) could not be read safely",
+                )
+                full_recheck_started = True
+                return
+
+            mismatches = [result for result in results if result.matches is False]
+            injected = 0
+            for result in results:
+                if result.matches is not True:
+                    should_inject = True
+                else:
+                    try:
+                        should_inject = not torrent.handle.have_piece(result.piece)
+                    except Exception:
+                        should_inject = False
+                if not should_inject:
+                    continue
+                data = read_piece_data(torrent_info, torrent.save_path, result.piece)
+                if data is None or not self._inject_piece(torrent.handle, result.piece, data):
+                    self._queue_full_recheck(
+                        info_hash,
+                        torrent,
+                        f"piece {result.piece} could not be revalidated safely",
+                    )
+                    full_recheck_started = True
+                    return
+                injected += 1
+
+            if mismatches:
+                self.recheck_status.emit(
+                    info_hash,
+                    f"Smart re-check found {len(mismatches)} corrupt piece(s); re-download queued",
+                )
+            else:
+                self._recheck_fingerprints[info_hash] = plan.current_fingerprints
+                self.recheck_status.emit(
+                    info_hash,
+                    f"Smart re-check validated {len(results)} piece(s)"
+                    + (f" and queued {injected} missing piece(s)" if injected else ""),
+                )
+        finally:
+            if not was_paused and not full_recheck_started:
+                try:
+                    torrent.handle.resume()
+                except Exception:
+                    pass
 
     @pyqtSlot(str)
     def force_reannounce(self, info_hash: str):
@@ -815,6 +947,7 @@ class SessionWorker(QObject):
                 torrent.added_time = added_time or time.time()
                 info_hash, _, _ = get_info_hashes(handle)
                 self._torrents[info_hash] = torrent
+                self._remember_recheck_fingerprint(info_hash, torrent)
                 _apply_private_tracker_profile(torrent, self._cfg)
                 self._apply_label_rule(torrent)
                 self._tracker_proxy_manager.sync_torrent(torrent)
@@ -1017,6 +1150,14 @@ class SessionWorker(QObject):
                     self._handle_save_resume_data(alert)
                 elif atype == lt.save_resume_data_failed_alert:
                     pass
+                elif atype == lt.torrent_checked_alert:
+                    ih, _, _ = get_info_hashes(alert.handle)
+                    torrent = self._torrents.get(ih)
+                    if torrent:
+                        self._remember_recheck_fingerprint(ih, torrent)
+                    if ih in self._full_rechecks_pending:
+                        self._full_rechecks_pending.discard(ih)
+                        self.recheck_status.emit(ih, "Full re-check completed")
                 elif atype == lt.peer_connect_alert:
                     self._on_peer_connect(alert)
                 elif atype == lt.listen_succeeded_alert:

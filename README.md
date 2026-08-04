@@ -37,6 +37,7 @@ A clean, fast, privacy-focused BitTorrent client built with Python, PyQt6, and l
 - Tracker add/remove in detail panel
 - Queue position controls (Top / Up / Down / Bottom)
 - Force recheck, force reannounce, sequential download
+- Smart re-check that skips unchanged files and hashes only pieces overlapping changed files
 - Configurable on-complete actions (pause, remove, seed to ratio)
 
 ### Tools
@@ -128,6 +129,9 @@ Tools > Activity Heatmap groups persisted session traffic into a 7 x 24 local-ti
 shows separate download and upload intensity, with hover details for the exact recorded byte totals.
 Settings includes a fuzzy search field above the tabs; matching group titles, labels, setting keys,
 and control placeholders keep only the relevant tabs and groups visible while editing remains intact.
+Force Recheck uses saved file size and modification-time fingerprints when available. Unchanged files
+finish immediately; changed files are mapped to the affected pieces, while missing metadata, missing
+storage, unsupported v2-only hashes, or an unsafe read fall back to libtorrent's full verifier.
 
 ## Usage
 

@@ -4,6 +4,8 @@ All notable changes to Flux will be documented in this file.
 
 ## Unreleased
 
+- Added conservative smart re-checking: unchanged files skip hashing, changed files validate only
+  overlapping v1 pieces, and unsafe or unsupported cases fall back to libtorrent's full verifier.
 - Added scheduled IP blocklist refresh with HTTP(S) mirror failover, bounded parsing, gzip support,
   atomic cache replacement, and status feedback while failed refreshes retain the last filter.
 - Added VPN-address binding with a fail-closed kill switch: a missing configured address pauses

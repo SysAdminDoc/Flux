@@ -1,6 +1,7 @@
 """Tests for session worker data structures."""
 
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 from flux.core.session_worker import (
     SessionStats,
@@ -11,6 +12,7 @@ from flux.core.session_worker import (
     _alert_log_entry,
     SessionWorker,
 )
+from flux.core.smart_recheck import PieceVerification, SmartRecheckPlan
 
 
 class TestSessionStats(unittest.TestCase):
@@ -154,6 +156,87 @@ class TestPrivateTrackerProfile(unittest.TestCase):
         })
         self.assertEqual(torrent.handle.unset_flags_calls, [_PRIVATE_TRACKER_FLAGS])
         self.assertEqual(torrent.handle.max_uploads, 7)
+
+
+class _RecheckHandle:
+    def __init__(self, torrent_info=True, paused=False, have_piece=True):
+        self._torrent_info = torrent_info
+        self._status = SimpleNamespace(paused=paused)
+        self._have_piece = have_piece
+        self.pause_calls = 0
+        self.resume_calls = 0
+        self.add_piece_calls = []
+
+    def torrent_file(self):
+        return self._torrent_info
+
+    def status(self):
+        return self._status
+
+    def pause(self):
+        self.pause_calls += 1
+
+    def resume(self):
+        self.resume_calls += 1
+
+    def have_piece(self, piece):
+        return self._have_piece
+
+    def add_piece(self, piece, data, flags):
+        self.add_piece_calls.append((piece, data, flags))
+
+
+class _RecheckTorrent:
+    def __init__(self, handle):
+        self.handle = handle
+        self.save_path = "C:/downloads"
+        self.full_recheck_calls = 0
+
+    def force_recheck(self):
+        self.full_recheck_calls += 1
+
+
+class TestSmartRecheckWorker(unittest.TestCase):
+    def test_missing_metadata_uses_full_recheck(self):
+        worker = SessionWorker({})
+        torrent = _RecheckTorrent(_RecheckHandle(torrent_info=None))
+        worker._torrents["hash"] = torrent
+
+        worker.force_recheck("hash")
+
+        self.assertEqual(torrent.full_recheck_calls, 1)
+
+    def test_clean_plan_skips_without_touching_handle(self):
+        worker = SessionWorker({})
+        handle = _RecheckHandle()
+        torrent = _RecheckTorrent(handle)
+        worker._torrents["hash"] = torrent
+        plan = SmartRecheckPlan((), (), (), skip=True, reason="unchanged")
+
+        with patch("flux.core.session_worker.build_smart_recheck_plan", return_value=plan):
+            worker.force_recheck("hash")
+
+        self.assertEqual(torrent.full_recheck_calls, 0)
+        self.assertEqual(handle.pause_calls, 0)
+        self.assertEqual(handle.resume_calls, 0)
+
+    def test_dirty_mismatch_is_injected_only_for_that_piece(self):
+        worker = SessionWorker({})
+        handle = _RecheckHandle(have_piece=True)
+        torrent = _RecheckTorrent(handle)
+        worker._torrents["hash"] = torrent
+        plan = SmartRecheckPlan((), (0,), (3,), reason="one changed file")
+        result = PieceVerification(piece=3, available=True, matches=False)
+
+        with patch("flux.core.session_worker.build_smart_recheck_plan", return_value=plan), \
+                patch("flux.core.session_worker.verify_pieces", return_value=(result,)), \
+                patch("flux.core.session_worker.read_piece_data", return_value=b"bad"):
+            worker.force_recheck("hash")
+
+        self.assertEqual(torrent.full_recheck_calls, 0)
+        self.assertEqual(handle.pause_calls, 1)
+        self.assertEqual(handle.resume_calls, 1)
+        self.assertEqual(handle.add_piece_calls[0][:2], (3, b"bad"))
 
 
 if __name__ == "__main__":

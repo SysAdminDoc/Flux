@@ -536,6 +536,8 @@ class MainWindow(QMainWindow):
             w.vpn_status.connect(self._on_vpn_status)
         if hasattr(w, "blocklist_status"):
             w.blocklist_status.connect(self._on_blocklist_status)
+        if hasattr(w, "recheck_status"):
+            w.recheck_status.connect(self._on_recheck_status)
 
         # Remote API -> worker
         self.remote_add_magnet_requested.connect(w.add_magnet)
@@ -1215,6 +1217,15 @@ class MainWindow(QMainWindow):
         QTimer.singleShot(15000, self._clear_blocklist_status_style)
 
     def _clear_blocklist_status_style(self):
+        self._status_label.setStyleSheet("")
+
+    def _on_recheck_status(self, info_hash: str, message: str):
+        """Show scoped re-check progress in the status bar."""
+        self._status_label.setText(message)
+        self._status_label.setStyleSheet("color: #60a5fa; font-weight: 700;")
+        QTimer.singleShot(15000, self._clear_recheck_status_style)
+
+    def _clear_recheck_status_style(self):
         self._status_label.setStyleSheet("")
 
     def _on_tracker_tested(self, info_hash: str, url: str, result: object):
