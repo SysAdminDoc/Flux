@@ -59,3 +59,73 @@ All notable changes to Flux will be documented in this file.
 
 - Changed: Update README.md
 - Added: Add files via upload
+
+## Roadmap archive — 2026-08-10 — ROADMAP.md
+
+<details>
+<summary>Original roadmap snapshot</summary>
+
+```markdown
+# ROADMAP
+
+Backlog for Flux Torrent Client. Target: match qBittorrent's feature density with a cleaner
+PyQt6 UI, while staying single-binary-installable.
+
+## Planned Features
+
+### Web / remote
+
+### Protocol coverage
+
+### Scheduling / automation
+
+### Content tools
+
+### UI
+
+### Safety / integrity
+
+### Distribution
+
+## Competitive Research
+
+- **qBittorrent** — the reference: polished WebUI, *arr integration, tag system, search engines.
+  Flux should match the API and tag/category coverage to slot into existing home-server stacks.
+- **Deluge** — daemon/client split and plugin ecosystem (label, ltConfig, execute). Borrow the
+  daemon architecture and execute-style ScriptHooks.
+- **Transmission** — minimal resource use, strong remote tooling. Benchmark Flux's idle CPU/mem
+  against it.
+- **rTorrent + ruTorrent** — CLI + web. The cross-seed and ratio-group features are mature here.
+- **Vuze / Azureus (legacy)** — cautionary tale on feature bloat; don't replicate its plugin
+  market mess.
+
+## Nice-to-Haves
+
+## Open-Source Research (Round 2)
+
+### Related OSS Projects
+- **qBittorrent** — https://github.com/qbittorrent/qBittorrent — C++/Qt6 on libtorrent-rasterbar; de-facto reference implementation.
+- **MacTorrent** — https://github.com/al-macleod/MacTorrent — Python + PyQt6 + libtorrent; closest peer. Randomized listen ports, optional post-download encryption.
+- **BAT-Torrent** — https://github.com/Mateuscruz19/BAT-Torrent — C++/Qt6/libtorrent with simplicity + privacy focus; minimal feature set — good baseline UI.
+- **R3DDY97/BitTorrent-client** — https://github.com/R3DDY97/BitTorrent-client — Python+libtorrent minimal personal client; readable protocol walkthrough.
+- **Deluge** — https://github.com/deluge-torrent/deluge — Python/GTK libtorrent client; plugin system is the gold standard in OSS torrenting.
+- **qBittorrent Enhanced Edition** — https://github.com/c0re100/qBittorrent-Enhanced-Edition — Adds auto-ban for fake-progress peers, IP block-by-ASN; privacy extras worth mirroring.
+- **libtorrent-rasterbar** — https://github.com/arvidn/libtorrent — Underlying lib; follow releases for BEP support changes.
+
+### Features to Borrow
+- Plugin architecture from `Deluge` — Python hook points for RSS auto-dl, auto-unrar, auto-move, custom trackers.
+- Fake-peer / leech-blocker lists from `qBittorrent Enhanced Edition` — ban peers sending invalid progress or known bad client strings.
+- ASN/IP block lists (`Enhanced Edition`) — prefilter anti-piracy honeypot nets (IPP2P-style) without relying on VPN.
+- Randomized listen port per session (`MacTorrent`) — fingerprinting resistance vs. static port detection.
+- Sequential-download + streaming piece-picker tweaks (`libtorrent` session_settings) — expose to UI for video preview.
+- Built-in WebUI on a bound port (`qBittorrent`) — headless mode for same-process remote control.
+- Anonymous mode toggle — disable DHT, LSD, PEX per-torrent (`qBittorrent` `anonymous_mode` flag).
+
+### Patterns & Architectures Worth Studying
+- **libtorrent session + `save_resume_data` checkpoints** (`qBittorrent`): persist resume state every N seconds, not just on shutdown — survives kill-9.
+- **QAbstractItemModel over torrent list** (`qBittorrent`): scales to 10k+ torrents with virtualized view; avoid naive `QListWidget`.
+- **Per-torrent share-ratio / seed-time stop criteria** (`Deluge`): declarative rules, applied by scheduler; keeps seed-bleeder ratios in check without manual stop.
+- **SOCKS5/HTTP proxy with auth per-session** (`qBittorrent`): pipe libtorrent through proxy for IP isolation; I2P support via SAM bridge for the paranoid tier.
+```
+
+</details>
